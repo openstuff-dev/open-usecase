@@ -469,45 +469,64 @@ export class Comments {
         <os-callout tone="danger">{{ error }}</os-callout>
       }
 
-      <div class="decision">
-        <button
-          os-button
-          variant="primary"
-          type="button"
-          [loading]="approving()"
-          [disabled]="approving() || !mayApprove()"
-          (click)="approve()"
-        >
-          Approve {{ item().ref }}
-        </button>
-        <button os-button type="button" (click)="openChanges()">Ask for changes</button>
-        @if (!mayApprove()) {
-          <p>Read every scenario to approve.</p>
-        }
-        @if (unsaved().length) {
-          <p class="unsaved">
-            Save or clear your comment on {{ unsaved().join(', ') }}. It isn't sent yet.
-          </p>
-        }
-      </div>
+      @if (item().retirement; as retirement) {
+        <os-callout tone="warning" [title]="retirement.requestedBy + ' asks to retire this'">
+          {{ retirement.reason }}
+        </os-callout>
+        <div class="decision">
+          <button os-button variant="danger" type="button" (click)="openDecision('retire')">
+            Retire {{ item().ref }}
+          </button>
+          <button os-button type="button" [loading]="keeping()" (click)="keep()">Keep it</button>
+        </div>
+      }
+
+      @if (item().needsReview) {
+        <div class="decision">
+          <button
+            os-button
+            variant="primary"
+            type="button"
+            [loading]="approving()"
+            [disabled]="approving() || !mayApprove()"
+            (click)="approve()"
+          >
+            Approve {{ item().ref }}
+          </button>
+          <button os-button type="button" (click)="openDecision('request-changes')">
+            Ask for changes
+          </button>
+          <button os-button type="button" variant="ghost" (click)="openDecision('reject')">
+            Reject
+          </button>
+          @if (!mayApprove()) {
+            <p>Read every scenario to approve.</p>
+          }
+          @if (unsaved().length) {
+            <p class="unsaved">
+              Save or clear your comment on {{ unsaved().join(', ') }}. It isn't sent yet.
+            </p>
+          }
+        </div>
+      }
     </article>
 
     <dialog os-dialog size="sm" [(open)]="asking">
       <header os-dialog-header>
-        <h2 os-dialog-title>What should change in {{ item().ref }}?</h2>
+        <h2 os-dialog-title>{{ wording().title }}</h2>
       </header>
-      <form id="ask-for-changes" os-dialog-body class="stack" (ngSubmit)="askForChanges()">
+      <form id="decide-with-text" os-dialog-body class="stack" (ngSubmit)="sendDecision()">
         @if (askError(); as error) {
           <os-callout tone="danger">{{ error }}</os-callout>
         }
-        <os-field label="What should change" [hint]="commentsHint()">
+        <os-field [label]="wording().label" [hint]="wording().hint">
           <textarea
             os-textarea
-            name="changes"
+            name="text"
             rows="5"
             required
             maxlength="10000"
-            [(ngModel)]="changes"
+            [(ngModel)]="decisionText"
           ></textarea>
         </os-field>
       </form>
@@ -515,13 +534,13 @@ export class Comments {
         <button os-button type="button" variant="ghost" (click)="asking.set(false)">Cancel</button>
         <button
           os-button
-          variant="primary"
+          [variant]="decision() === 'request-changes' ? 'primary' : 'danger'"
           type="submit"
-          form="ask-for-changes"
+          form="decide-with-text"
           [loading]="sending()"
-          [disabled]="!changes.trim()"
+          [disabled]="!decisionText.trim()"
         >
-          Send to the agent
+          {{ wording().send }}
         </button>
       </footer>
     </dialog>
@@ -745,11 +764,13 @@ export class UseCaseReview {
   protected readonly approving = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly asking = signal(false);
-  protected changes = '';
+  protected readonly decision = signal<'request-changes' | 'reject' | 'retire'>('request-changes');
+  protected decisionText = '';
+  protected readonly keeping = signal(false);
   protected readonly sending = signal(false);
   protected readonly askError = signal<string | null>(null);
   private readonly commentKey = new IdempotencyKey();
-  private readonly changesKey = new IdempotencyKey();
+  private readonly decisionKey = new IdempotencyKey();
 
   protected readonly total = computed(() => this.item().scenarios.length);
   protected readonly scenario = computed(() => this.item().scenarios[this.reading().at] ?? null);
@@ -778,13 +799,37 @@ export class UseCaseReview {
     return this.item().comments.filter((c) => c.scenario === null || !shown.has(c.scenario));
   });
 
-  protected readonly commentsHint = computed(() => {
-    const { comments, revision } = this.item();
+  /** What the dialog says, for the decision it's asking about. */
+  protected readonly wording = computed(() => {
+    const { comments, revision, ref } = this.item();
     const count = comments.filter((c) => c.revision === revision).length;
-    if (!count) return 'The agent reads this and revises the use case.';
-    return count === 1
-      ? 'The agent also gets your comment on this revision.'
-      : `The agent also gets the ${String(count)} comments on this revision.`;
+    switch (this.decision()) {
+      case 'reject':
+        return {
+          title: `Reject ${ref}?`,
+          label: 'Why not',
+          hint: 'It stays visible and searchable with this reason, and can’t be revised.',
+          send: `Reject ${ref}`,
+        };
+      case 'retire':
+        return {
+          title: `Retire ${ref}?`,
+          label: 'Why it’s retired',
+          hint: 'It stays visible and searchable, and its ID is never used again.',
+          send: `Retire ${ref}`,
+        };
+      default:
+        return {
+          title: `What should change in ${ref}?`,
+          label: 'What should change',
+          hint: !count
+            ? 'The agent reads this and revises the use case.'
+            : count === 1
+              ? 'The agent also gets your comment on this revision.'
+              : `The agent also gets the ${String(count)} comments on this revision.`,
+          send: 'Send to the agent',
+        };
+    }
   });
 
   private get base(): string {
@@ -851,29 +896,48 @@ export class UseCaseReview {
     }
   }
 
-  protected openChanges(): void {
-    this.changes = '';
+  protected openDecision(decision: 'request-changes' | 'reject' | 'retire'): void {
+    this.decision.set(decision);
+    this.decisionText = '';
     this.askError.set(null);
     this.asking.set(true);
   }
 
-  protected async askForChanges(): Promise<void> {
-    if (this.sending() || !this.changes.trim()) return;
+  protected async sendDecision(): Promise<void> {
+    if (this.sending() || !this.decisionText.trim()) return;
+    const decision = this.decision();
     this.sending.set(true);
     this.askError.set(null);
+    const { ref } = this.item();
     try {
       await this.api.post(
-        `${this.base}/request-changes`,
-        { changes: this.changes },
-        this.changesKey.value,
+        `${this.base}/${decision}`,
+        decision === 'request-changes'
+          ? { changes: this.decisionText }
+          : { reason: this.decisionText },
+        this.decisionKey.value,
       );
-      this.changesKey.renew();
+      this.decisionKey.renew();
       this.asking.set(false);
-      this.changed.emit({ decided: `${this.item().ref} sent back for changes.` });
+      const done = { 'request-changes': 'sent back for changes', reject: 'rejected', retire: 'retired' };
+      this.changed.emit({ decided: `${ref} ${done[decision]}.` });
     } catch (error) {
       this.askError.set(errorText(error));
     } finally {
       this.sending.set(false);
+    }
+  }
+
+  protected async keep(): Promise<void> {
+    this.keeping.set(true);
+    this.error.set(null);
+    try {
+      await this.api.post(`${this.base}/keep`);
+      this.changed.emit({ decided: `${this.item().ref} kept.` });
+    } catch (error) {
+      this.error.set(errorText(error));
+    } finally {
+      this.keeping.set(false);
     }
   }
 }

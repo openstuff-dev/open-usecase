@@ -8,6 +8,7 @@ import {
   commentByRef,
   proposeUseCase,
   readUseCase,
+  requestRetirement,
   reviseUseCase,
   searchUseCases,
   type ProposeResult,
@@ -26,8 +27,11 @@ While it waits:
 4. If it isn't approved on arrival, end your turn and tell the user it's waiting in the inbox. Don't keep checking its status, and don't start building, not even the parts you're sure about.
 
 When the user comes back:
-5. Call get_usecase once. Build only if the status is approved. If changes were requested, read the comments, call revise_usecase, and end your turn again.
+5. Call get_usecase once. Build only if the status is approved. If changes were requested, read the comments, call revise_usecase, and end your turn again. If it was rejected, tell the user why and don't build it.
 6. Build only what the approved scenarios describe. Put the scenario's full ID in the name of each test that proves it, such as "UC-142/S2 refuses a bad colour".
+
+When you revise:
+- Keep a scenario's tag only if you reworded it. If its meaning changed, even by one new step, leave the tag off so it gets a new ID. An old test must not appear to prove new behaviour.
 
 When you find behaviour no use case covers:
 7. Always ask the user whether to build it with the current task. If yes, propose it. If no, or nobody can answer, propose it anyway so it reaches the inbox, and carry on without building it.`;
@@ -55,11 +59,16 @@ const describeResult = (result: ProposeResult, verb: string) =>
   ].join('\n');
 
 const NEXT_STEP: Record<UseCaseStatus, (ref: string) => string> = {
-  approved: () => 'It is ready to build. Build only what these scenarios describe.',
+  approved: () =>
+    'It is ready to build, if it is not built yet. Build only what these scenarios describe. Then call claim_done after the merge.',
   proposed: () =>
     'It is waiting for review. Do not build it yet. End your turn and tell the user it is waiting in the inbox.',
   changes_requested: (ref) =>
     `A person asked for changes. Do not build it. Revise ${ref} first with revise_usecase, using the comments below, then end your turn.`,
+  rejected: () =>
+    'A person rejected it. Do not build it. The comments say why. Propose a new use case only if the user asks for it.',
+  done: () => 'It is built and live. To change it, call revise_usecase: a person approves the change.',
+  retired: () => 'It was built and later removed. Do not build it again without asking the user.',
 };
 
 const describeComment = (ref: string, comment: ReadUseCase['comments'][number]) => {
@@ -68,16 +77,38 @@ const describeComment = (ref: string, comment: ReadUseCase['comments'][number]) 
   return `- On ${on}, by ${comment.author} (revision ${String(comment.revision)}): ${comment.body}`;
 };
 
-const describeUseCase = (useCase: ReadUseCase) =>
-  [
+/** A done use case can have a newer revision on the way. The live one stays in force until then. */
+function describeNewerRevision(useCase: ReadUseCase): string[] {
+  if (!useCase.live) return [];
+  const on = `Revision ${String(useCase.live.revision)} is live and stays in force.`;
+  const state = useCase.revisionState === 'changes_requested' ? 'changes requested' : useCase.revisionState;
+  return [
+    `${on} Revision ${String(useCase.revision)} is ${state}. Build it only once it's approved.`,
+  ];
+}
+
+const describeUseCase = (useCase: ReadUseCase) => {
+  const latestComments = useCase.comments.filter((c) => c.revision === useCase.revision);
+  return [
     `${useCase.ref}: ${useCase.title}. Status: ${useCase.status}. Revision ${String(useCase.revision)}.`,
     NEXT_STEP[useCase.status](useCase.ref),
+    ...describeNewerRevision(useCase),
+    ...(useCase.retireReason ? [`Why it was retired: ${useCase.retireReason}`] : []),
+    ...(useCase.retirementRequested ? ['A request to retire it is waiting for a person.'] : []),
+    // A person can comment and still approve. Their doubt shouldn't get lost.
+    ...(useCase.status === 'approved' && latestComments.length
+      ? ['A person left comments on this revision when approving. Read them, and raise them with the user before you build.']
+      : []),
     ...(useCase.comments.length
       ? ['', 'Comments:', ...useCase.comments.map((c) => describeComment(useCase.ref, c))]
       : []),
     '',
     useCase.gherkin,
+    ...(useCase.live
+      ? ['', `The live text, revision ${String(useCase.live.revision)}:`, '', useCase.live.gherkin]
+      : []),
   ].join('\n');
+};
 
 /** One server per request (stateless), for one agent. It only ever sees the agent's team. */
 export function createMcpServer(pool: Pool, actor: Actor, version: string): McpServer {
@@ -132,7 +163,7 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
     'revise_usecase',
     {
       description:
-        'Send new Gherkin for a use case after a person asked for changes. Keep the tag on a reworded scenario. Leave it off when the meaning changed, so it gets a new ID.',
+        'Send new Gherkin for a use case, after a person asked for changes or to change one that is done. Keep the tag on a reworded scenario. Leave it off when the meaning changed, so it gets a new ID: an old test must not appear to prove new behaviour.',
       inputSchema: {
         remote,
         id: ref,
@@ -180,6 +211,28 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
   );
 
   server.registerTool(
+    'request_retirement',
+    {
+      description:
+        'Ask a person to retire a done use case, because its behaviour was removed. You cannot retire it yourself: it goes to the inbox, and you carry on with other work.',
+      inputSchema: {
+        remote,
+        id: ref,
+        reason: z.string().trim().min(1).max(5000).describe('Why it should be retired'),
+      },
+    },
+    (input) =>
+      run(async (db) => {
+        await requestRetirement(db, actor, {
+          remote: input.remote,
+          ref: input.id,
+          reason: input.reason,
+        });
+        return answer(`Filed. A person decides on retiring ${input.id}. Carry on with other work.`);
+      }),
+  );
+
+  server.registerTool(
     'get_usecase',
     {
       description:
@@ -199,7 +252,9 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
         "Find your team's use cases by the words in their title and text, optionally with one status.",
       inputSchema: {
         query: z.string().trim().min(1).max(500).describe('Words to look for, e.g. "primary colour"'),
-        status: z.enum(['proposed', 'changes_requested', 'approved']).optional(),
+        status: z
+          .enum(['proposed', 'changes_requested', 'approved', 'rejected', 'done', 'retired'])
+          .optional(),
       },
     },
     (input) =>

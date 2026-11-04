@@ -326,3 +326,117 @@ Feature: A person reads every scenario before deciding
     And I can't send it without any text
     And the agent gets what I typed and my comments on the scenarios
 ```
+
+## Stage B: the rest of the product
+
+The user chose to build the rest of the product on 2026-11-04, and to judge it by using it on a product
+they know. These use cases weren't reviewed before building. They are listed as proposed so they can be
+reviewed afterwards in the real inbox.
+
+### UC-10: A person rejects a use case
+
+Status: proposed, built
+
+```gherkin
+Feature: A person rejects a use case
+
+  @S1
+  Scenario: Reject with a reason
+    Given a use case is in the inbox
+    When I reject it and say why
+    Then its status is "rejected" and it leaves the inbox
+    And it stays visible and searchable, with the reason
+
+  @S2
+  Scenario: A rejection needs a reason
+    Given a use case is in the inbox
+    When I try to reject it without saying why
+    Then I can't, and it stays in the inbox
+
+  @S3
+  Scenario: A rejected use case can't be revised
+    Given a use case was rejected
+    When its agent tries to revise it
+    Then it is refused, and told to propose a new one if it's still needed
+
+  @S4
+  Scenario: Only people reject and retire
+    Given I am an agent
+    When I try to reject or retire a use case
+    Then I can't, whatever my review mode
+```
+
+### UC-11: Changing a done use case
+
+Status: proposed, built
+
+```gherkin
+Feature: Changing a done use case
+
+  @S1
+  Scenario: A change goes through approval while the live version stays in force
+    Given a use case is done
+    When an agent sends a new revision
+    Then a person reviews it in the inbox
+    And the use case still reads "done", and says the live revision stays in force
+    And an agent reading it gets both texts
+```
+
+### UC-12: Retiring a use case
+
+Status: proposed, built
+
+```gherkin
+Feature: Retiring a use case
+
+  @S1
+  Scenario: An agent files a retirement
+    Given a use case is done
+    When an agent asks to retire it, and says why
+    Then it stays done
+    And it appears in the inbox with the reason
+
+  @S2
+  Scenario: A person retires it
+    Given a use case is done
+    When I retire it and say why
+    Then its status is "retired"
+    And agents can still read it, and are told not to build it again
+
+  @S3
+  Scenario: A person keeps it
+    Given an agent asked to retire a use case
+    When I decide to keep it
+    Then the request goes away and it stays done
+
+  @S4
+  Scenario: IDs are never reused
+    Given a use case was rejected or retired
+    When an agent proposes a new use case
+    Then the new one gets a new number
+```
+
+### UC-13: A doubt doesn't get lost when approving
+
+The user left "Hmm.. well.. Alright?" on a scenario and approved, not knowing that approving ended the
+review.
+
+Status: proposed, built
+
+```gherkin
+Feature: A doubt doesn't get lost when approving
+
+  @S1
+  Scenario: Comments reach the agent
+    Given I left a comment on a revision and approved it
+    When the agent reads the use case
+    Then it sees the comment
+    And it is told to raise it with the user before building
+
+  @S2
+  Scenario: No comments, no prompt
+    Given I approved a revision without comments
+    When the agent reads the use case
+    Then it isn't told to raise anything
+```
+

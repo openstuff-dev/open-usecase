@@ -42,6 +42,20 @@ async function projectOfRemote(db: Client, remote: string): Promise<ProjectRow |
 
 const refOf = (number: number) => `UC-${String(number)}`;
 
+/** Joins a use case `u` to its latest revision and its live one. */
+const REVISION_JOINS = `
+  JOIN LATERAL (
+    SELECT * FROM revisions WHERE use_case_id = u.id ORDER BY number DESC LIMIT 1
+  ) latest ON true
+  LEFT JOIN LATERAL (
+    SELECT * FROM revisions WHERE use_case_id = u.id AND state = 'live' LIMIT 1
+  ) live ON true`;
+
+/** The status: worked out, so there's one source of truth. Needs REVISION_JOINS. */
+const STATUS = `CASE WHEN u.retired_at IS NOT NULL THEN 'retired'
+                     WHEN live.id IS NOT NULL THEN 'done'
+                     ELSE latest.state END`;
+
 const REF = /^UC-(\d{1,9})$/;
 
 /** Finds `UC-142` in a remote's project. Other teams' use cases simply aren't there. */
@@ -49,12 +63,24 @@ async function useCaseByRef(
   db: Client,
   remote: string,
   ref: string,
-): Promise<{ id: string; number: number; language: string; nextScenario: number } | null> {
+): Promise<{
+  id: string;
+  number: number;
+  language: string;
+  nextScenario: number;
+  retired: boolean;
+} | null> {
   const number = REF.exec(ref)?.[1];
   const project = await projectOfRemote(db, remote);
   if (!number || !project) return null;
-  const { rows } = await db.query<{ id: string; number: number; nextScenario: number }>(
-    `SELECT id, number, next_scenario_number AS "nextScenario" FROM use_cases
+  const { rows } = await db.query<{
+    id: string;
+    number: number;
+    nextScenario: number;
+    retired: boolean;
+  }>(
+    `SELECT id, number, next_scenario_number AS "nextScenario", retired_at IS NOT NULL AS retired
+       FROM use_cases
       WHERE project_id = $1 AND number = $2 FOR UPDATE`,
     [project.id, Number(number)],
   );
@@ -95,9 +121,17 @@ export async function proposeUseCase(
     [actor.teamId, id, scenarios.map((s) => s.number)],
   );
   await db.query(
-    `INSERT INTO revisions (team_id, use_case_id, number, gherkin, original_request, proposed_by)
-     VALUES ($1, $2, 1, $3, $4, $5)`,
-    [actor.teamId, id, gherkin, input.originalRequest ?? null, actor.id],
+    `INSERT INTO revisions
+       (team_id, use_case_id, number, gherkin, original_request, proposed_by, scenario_numbers)
+     VALUES ($1, $2, 1, $3, $4, $5, $6)`,
+    [
+      actor.teamId,
+      id,
+      gherkin,
+      input.originalRequest ?? null,
+      actor.id,
+      scenarios.map((s) => s.number),
+    ],
   );
   return {
     id,
@@ -113,8 +147,9 @@ export async function proposeUseCase(
 }
 
 /**
- * New Gherkin after a person asked for changes. Only the agent that proposed the use case may
- * revise it, and only while changes are requested.
+ * New Gherkin for a use case, in two cases. After a person asked for changes, only the agent that
+ * proposed it may revise it. A done use case can be changed by any agent of the team: the live
+ * revision stays in force until the new one goes live.
  */
 export async function reviseUseCase(
   db: Client,
@@ -125,7 +160,7 @@ export async function reviseUseCase(
   if (!useCase) throw notFound(input.ref);
   const { rows } = await db.query<{
     number: number;
-    state: UseCaseStatus;
+    state: string;
     proposedBy: string;
     originalRequest: string | null;
   }>(
@@ -136,13 +171,19 @@ export async function reviseUseCase(
   );
   const latest = rows.at(0);
   if (!latest) throw notFound(input.ref);
-  if (latest.proposedBy !== actor.id) {
+  if (useCase.retired) {
+    throw new HttpError(409, `${input.ref} is retired. Propose a new use case instead.`);
+  }
+  if (latest.state === 'rejected') {
+    throw new HttpError(409, `${input.ref} was rejected. Propose a new use case if it's still needed.`);
+  }
+  if (latest.state === 'changes_requested' && latest.proposedBy !== actor.id) {
     throw new HttpError(403, `Only the agent that proposed ${input.ref} can revise it.`);
   }
-  if (latest.state !== 'changes_requested') {
+  if (latest.state !== 'changes_requested' && latest.state !== 'live') {
     throw new HttpError(
       409,
-      `${input.ref} is "${latest.state}". It can be revised only when changes are requested.`,
+      `${input.ref}'s latest revision is "${latest.state}". It can be revised only when changes are requested or it's done.`,
     );
   }
   const known = await db.query<{ number: number }>(
@@ -170,8 +211,9 @@ export async function reviseUseCase(
   await db.query(
     // The request stays with every revision: the reviewer still checks against it.
     `INSERT INTO revisions
-       (team_id, use_case_id, number, gherkin, what_changed, original_request, proposed_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (team_id, use_case_id, number, gherkin, what_changed, original_request, proposed_by,
+        scenario_numbers)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       actor.teamId,
       useCase.id,
@@ -180,6 +222,7 @@ export async function reviseUseCase(
       input.whatChanged,
       latest.originalRequest,
       actor.id,
+      scenarios.map((s) => s.number),
     ],
   );
   const ref = refOf(useCase.number);
@@ -247,7 +290,7 @@ async function decide(
   db: Client,
   actor: Actor,
   id: string,
-  state: 'approved' | 'changes_requested',
+  state: 'approved' | 'changes_requested' | 'rejected',
 ): Promise<{ status: UseCaseStatus }> {
   const { rows } = await db.query(
     `UPDATE revisions SET state = $2, decided_by = $3, decided_at = now(),
@@ -255,10 +298,18 @@ async function decide(
       WHERE use_case_id = $1 AND state = 'proposed' RETURNING id`,
     [id, state, actor.id],
   );
-  if (rows.length) return { status: state };
+  if (rows.length) return { status: await statusOf(db, id) };
   const exists = await db.query('SELECT 1 FROM use_cases WHERE id = $1', [id]);
   if (!exists.rowCount) throw notFound('That use case');
   throw new HttpError(409, 'That use case isn’t waiting for review any more.');
+}
+
+async function statusOf(db: Client, id: string): Promise<UseCaseStatus> {
+  const { rows } = await db.query<{ status: UseCaseStatus }>(
+    `SELECT ${STATUS} AS status FROM use_cases u ${REVISION_JOINS} WHERE u.id = $1`,
+    [id],
+  );
+  return rows.at(0)?.status ?? 'proposed';
 }
 
 export const approveUseCase = (db: Client, actor: Actor, id: string) =>
@@ -276,6 +327,69 @@ export async function requestChanges(
   return decided;
 }
 
+/** Only people reject. The use case and its reason stay visible and searchable. */
+export async function rejectUseCase(
+  db: Client,
+  actor: Actor,
+  id: string,
+  reason: string,
+): Promise<{ status: UseCaseStatus }> {
+  const decided = await decide(db, actor, id, 'rejected');
+  await addComment(db, actor, id, 'That use case', reason, undefined);
+  return decided;
+}
+
+/** An agent asks for retirement. It only files the request: a person decides, whatever the mode. */
+export async function requestRetirement(
+  db: Client,
+  actor: Actor,
+  input: { remote: string; ref: string; reason: string },
+): Promise<void> {
+  const useCase = await useCaseByRef(db, input.remote, input.ref);
+  if (!useCase) throw notFound(input.ref);
+  if (useCase.retired) throw new HttpError(409, `${input.ref} is already retired.`);
+  const { rowCount } = await db.query(
+    `UPDATE use_cases SET retirement_requested_at = now(), retirement_requested_by = $2,
+            retirement_request_reason = $3
+      WHERE id = $1 AND EXISTS (
+        SELECT 1 FROM revisions WHERE use_case_id = $1 AND state = 'live')`,
+    [useCase.id, actor.id, input.reason],
+  );
+  if (!rowCount) {
+    throw new HttpError(409, `${input.ref} isn't done, so there's nothing to retire.`);
+  }
+}
+
+/** A person retires a use case. It stays visible and searchable, and its ID is never reused. */
+export async function retireUseCase(
+  db: Client,
+  actor: Actor,
+  id: string,
+  reason: string,
+): Promise<{ status: UseCaseStatus }> {
+  const { rowCount } = await db.query(
+    `UPDATE use_cases SET retired_at = now(), retired_by = $2, retire_reason = $3,
+            retirement_requested_at = NULL, retirement_requested_by = NULL,
+            retirement_request_reason = NULL
+      WHERE id = $1 AND retired_at IS NULL`,
+    [id, actor.id, reason],
+  );
+  if (!rowCount) throw new HttpError(409, 'That use case wasn’t found, or is already retired.');
+  return { status: 'retired' };
+}
+
+/** A person decides against an agent's request. The use case stays as it is. */
+export async function keepUseCase(db: Client, id: string): Promise<{ status: UseCaseStatus }> {
+  const { rowCount } = await db.query(
+    `UPDATE use_cases SET retirement_requested_at = NULL, retirement_requested_by = NULL,
+            retirement_request_reason = NULL
+      WHERE id = $1 AND retirement_requested_at IS NOT NULL`,
+    [id],
+  );
+  if (!rowCount) throw new HttpError(409, 'Nobody is asking to retire that use case any more.');
+  return { status: await statusOf(db, id) };
+}
+
 export interface UseCaseComment {
   scenario: number | null;
   revision: number;
@@ -287,9 +401,14 @@ export interface ReadUseCase {
   ref: string;
   title: string;
   status: UseCaseStatus;
+  /** The latest revision. While it's approved, this is the approved text. */
   revision: number;
-  /** The latest revision's text. While it's approved, that is the approved text. */
+  revisionState: string;
   gherkin: string;
+  /** The revision in force, when a done use case has a newer one on the way. */
+  live: { revision: number; gherkin: string } | null;
+  retireReason: string | null;
+  retirementRequested: boolean;
   comments: UseCaseComment[];
 }
 
@@ -302,7 +421,12 @@ export async function readUseCase(
   const key = tryParseRemote(input.remote)?.key;
   if (!number || !key) throw notFound(input.ref);
   const { rows } = await db.query<Omit<ReadUseCase, 'ref'>>(
-    `SELECT u.title, latest.state AS status, latest.number AS revision, latest.gherkin,
+    `SELECT u.title, ${STATUS} AS status, latest.number AS revision,
+            latest.state AS "revisionState", latest.gherkin,
+            CASE WHEN live.id IS NOT NULL AND live.id <> latest.id
+                 THEN json_build_object('revision', live.number, 'gherkin', live.gherkin) END AS live,
+            u.retire_reason AS "retireReason",
+            u.retirement_requested_at IS NOT NULL AS "retirementRequested",
             coalesce((
               SELECT json_agg(json_build_object(
                        'scenario', c.scenario_number, 'revision', cr.number,
@@ -315,10 +439,7 @@ export async function readUseCase(
             ), '[]') AS comments
        FROM repositories rp
        JOIN use_cases u ON u.project_id = rp.project_id
-       JOIN LATERAL (
-         SELECT number, state, gherkin FROM revisions
-          WHERE use_case_id = u.id ORDER BY number DESC LIMIT 1
-       ) latest ON true
+       ${REVISION_JOINS}
       WHERE rp.remote_key = $1 AND u.number = $2`,
     [key, Number(number)],
   );
@@ -346,15 +467,12 @@ export async function searchUseCases(
   const query = toSearchQuery(input.query);
   if (!query) throw new HttpError(400, 'Search for at least one word.');
   const { rows } = await db.query<Omit<FoundUseCase, 'ref'> & { number: number }>(
-    `SELECT u.number, u.title, latest.state AS status, p.name AS project
+    `SELECT u.number, u.title, ${STATUS} AS status, p.name AS project
        FROM use_cases u
        JOIN projects p ON p.id = u.project_id
-       JOIN LATERAL (
-         SELECT state, gherkin FROM revisions
-          WHERE use_case_id = u.id ORDER BY number DESC LIMIT 1
-       ) latest ON true
+       ${REVISION_JOINS}
       WHERE to_tsvector('simple', u.title || ' ' || latest.gherkin) @@ to_tsquery('simple', $1)
-        AND ($2::text IS NULL OR latest.state = $2)
+        AND ($2::text IS NULL OR ${STATUS} = $2)
       ORDER BY p.name, u.number
       LIMIT 50`,
     [query, input.status ?? null],
@@ -365,12 +483,20 @@ export async function searchUseCases(
 /** Everything waiting for a person in this team, oldest first, in one query. */
 export async function loadInbox(db: Client): Promise<Inbox> {
   const { rows } = await db.query<
-    Omit<InboxItem, 'ref' | 'scenarios' | 'preamble'> & { number: number; gherkin: string; language: string }
+    Omit<InboxItem, 'ref' | 'scenarios' | 'preamble'> & {
+      number: number;
+      gherkin: string;
+      language: string;
+    }
   >(
     `SELECT u.id, u.number, u.title, r.number AS revision, r.gherkin, p.language,
             json_build_object('slug', p.slug, 'name', p.name) AS project,
             a.name AS "proposedBy", r.created_at AS "proposedAt",
             r.original_request AS "originalRequest", r.what_changed AS "whatChanged",
+            r.state = 'proposed' AS "needsReview",
+            CASE WHEN u.retirement_requested_at IS NOT NULL THEN json_build_object(
+              'requestedBy', ra.name, 'requestedAt', u.retirement_requested_at,
+              'reason', u.retirement_request_reason) END AS retirement,
             coalesce((
               SELECT json_agg(json_build_object(
                        'id', c.id, 'revision', cr.number, 'scenario', c.scenario_number,
@@ -381,12 +507,19 @@ export async function loadInbox(db: Client): Promise<Inbox> {
                 JOIN actors ca ON ca.id = c.author_id
                WHERE c.use_case_id = u.id
             ), '[]') AS comments
-       FROM revisions r
-       JOIN use_cases u ON u.id = r.use_case_id
+       FROM use_cases u
+       JOIN LATERAL (
+         SELECT * FROM revisions rv
+          WHERE rv.use_case_id = u.id
+            AND (rv.state = 'proposed'
+                 OR (rv.state = 'live' AND u.retirement_requested_at IS NOT NULL))
+          ORDER BY rv.state = 'proposed' DESC, rv.number DESC LIMIT 1
+       ) r ON true
        JOIN projects p ON p.id = u.project_id
        JOIN actors a ON a.id = r.proposed_by
-      WHERE r.state = 'proposed'
-      ORDER BY r.created_at`,
+       LEFT JOIN actors ra ON ra.id = u.retirement_requested_by
+      WHERE u.retired_at IS NULL
+      ORDER BY coalesce(u.retirement_requested_at, r.created_at)`,
   );
   return {
     items: rows.map(({ number, gherkin, language, ...row }) => ({

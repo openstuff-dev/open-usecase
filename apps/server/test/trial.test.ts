@@ -564,6 +564,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         'comment_on_usecase',
         'get_usecase',
         'propose_usecase',
+        'request_retirement',
         'revise_usecase',
         'search_usecases',
       ]);
@@ -593,7 +594,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const { text, isError } = await get(ref);
       expect(isError).toBe(false);
       expect(text).toContain('Status: approved.');
-      expect(text).toContain('It is ready to build.');
+      expect(text).toContain('It is ready to build, if it is not built yet.');
       expect(text).toContain('Scenario: Change it');
       expect(text).toContain('@S1');
     });
@@ -714,6 +715,175 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const instructions = must((await agent(agentA.token)).getInstructions(), 'instructions');
       expect(instructions).toContain('Call get_usecase once. Build only if the status is approved.');
       expect(instructions).toContain('If changes were requested');
+    });
+  });
+
+  describe('the lifecycle', () => {
+    const post = (path: string, payload?: object, cookie = memberA) =>
+      http({ cookie }, 'POST', `/api/t/acme/usecases/${path}`, payload);
+    const get = (ref: string) => call(agentA.token, 'get_usecase', { remote: REMOTE_A, id: ref });
+    /** Stands in for going live, until reports do it. */
+    const goLive = (id: string) =>
+      withScope(pool, { bypass: true }, (db) =>
+        db.query(`UPDATE revisions SET state = 'live' WHERE use_case_id = $1 AND state = 'approved'`, [id]),
+      );
+    async function done() {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await post(`${id}/approve`);
+      await goLive(id);
+      return { ref, id };
+    }
+
+    it('UC-10/S1 a person rejects with a reason: it leaves the inbox and stays searchable', async () => {
+      const word = `tapir${String(Date.now())}`;
+      const ref = await propose(`Feature: F\n\n  Scenario: ${word}\n    When I look\n    Then I see\n`);
+      const { id } = await inboxItem(ref);
+      const response = await post(`${id}/reject`, { reason: 'We decided against this.' });
+      expect(response.json()).toEqual({ status: 'rejected' });
+      expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
+      const found = await call(agentA.token, 'search_usecases', { query: word, status: 'rejected' });
+      expect(found.text).toContain(`${ref} (Shop)`);
+      const read = await get(ref);
+      expect(read.text).toContain('Status: rejected.');
+      expect(read.text).toContain('Do not build it.');
+      expect(read.text).toContain('We decided against this.');
+    });
+
+    it('UC-10/S2 rejecting without a reason is refused', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      expect((await post(`${id}/reject`, {})).statusCode).toBe(400);
+      expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(true);
+    });
+
+    it('UC-10/S3 a rejected use case cannot be revised', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await post(`${id}/reject`, { reason: 'No.' });
+      const revised = await call(agentA.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'Trying again',
+        gherkin: GHERKIN,
+      });
+      expect(revised).toMatchObject({ isError: true });
+      expect(revised.text).toContain('was rejected');
+    });
+
+    it('UC-10/S4 an agent cannot reject or retire: no tool, and a token is refused', async () => {
+      const { id } = await inboxItem(await propose());
+      const { tools } = await (await agent(agentA.token)).listTools();
+      expect(tools.map((t) => t.name)).not.toContain('reject_usecase');
+      expect(tools.map((t) => t.name)).not.toContain('retire_usecase');
+      for (const action of ['reject', 'retire']) {
+        const response = await http(
+          { token: agentA.token },
+          'POST',
+          `/api/t/acme/usecases/${id}/${action}`,
+          { reason: 'Because I can.' },
+        );
+        expect(response.statusCode).toBe(403);
+      }
+    });
+
+    it('UC-11/S1 changing a done use case makes a new revision, and the live one stays in force', async () => {
+      const { ref, id } = await done();
+      expect((await get(ref)).text).toContain('Status: done.');
+      const revised = await call(agentA2.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'Colours can have names now.',
+        gherkin: 'Feature: Change the colour\n\n  @S1\n  Scenario: Change it\n    When I name a colour\n    Then the app uses it\n',
+      });
+      expect(revised.isError, revised.text).toBe(false);
+      expect((await inboxItem(ref)).revision).toBe(2);
+
+      const read = (await get(ref)).text;
+      expect(read).toContain('Status: done.');
+      expect(read).toContain('Revision 1 is live and stays in force.');
+      expect(read).toContain('Revision 2 is proposed.');
+      expect(read).toContain('When I name a colour');
+      expect(read).toContain('When I change the primary colour');
+      await post(`${id}/approve`);
+      expect((await get(ref)).text).toContain('Status: done.');
+      expect((await get(ref)).text).toContain('Revision 2 is approved.');
+    });
+
+    it('UC-12/S1 an agent files a retirement: still done, and in the inbox with the reason', async () => {
+      const { ref } = await done();
+      const filed = await call(agentA.token, 'request_retirement', {
+        remote: REMOTE_A,
+        id: ref,
+        reason: 'The page was removed.',
+      });
+      expect(filed.isError, filed.text).toBe(false);
+      expect((await get(ref)).text).toContain('Status: done.');
+      expect(await inboxItem(ref)).toMatchObject({
+        needsReview: false,
+        retirement: { requestedBy: 'Agent A', reason: 'The page was removed.' },
+      });
+    });
+
+    it('UC-12/S1 only a done use case can have a retirement filed', async () => {
+      const filed = await call(agentA.token, 'request_retirement', {
+        remote: REMOTE_A,
+        id: await propose(),
+        reason: 'Why not.',
+      });
+      expect(filed).toMatchObject({ isError: true });
+      expect(filed.text).toContain("isn't done");
+    });
+
+    it('UC-12/S2 a person retires it: it stays readable, and agents are told not to build it', async () => {
+      const { ref, id } = await done();
+      const response = await post(`${id}/retire`, { reason: 'Removed in 2.0.' });
+      expect(response.json()).toEqual({ status: 'retired' });
+      const read = (await get(ref)).text;
+      expect(read).toContain('Status: retired.');
+      expect(read).toContain('Why it was retired: Removed in 2.0.');
+      const revised = await call(agentA.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'Back again',
+        gherkin: GHERKIN,
+      });
+      expect(revised.text).toContain('is retired');
+    });
+
+    it('UC-12/S3 a person keeps it: the request goes, and it stays done', async () => {
+      const { ref, id } = await done();
+      await call(agentA.token, 'request_retirement', { remote: REMOTE_A, id: ref, reason: 'Unused.' });
+      expect((await post(`${id}/keep`)).json()).toEqual({ status: 'done' });
+      expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
+      expect((await post(`${id}/keep`)).statusCode).toBe(409);
+    });
+
+    it('UC-12/S4 a number is never used again, after rejection or retirement', async () => {
+      const first = await propose();
+      await post(`${(await inboxItem(first)).id}/reject`, { reason: 'No.' });
+      const { ref: second, id } = await done();
+      await post(`${id}/retire`, { reason: 'Gone.' });
+      const third = await propose();
+      const number = (ref: string) => Number(ref.slice(3));
+      expect(number(second)).toBeGreaterThan(number(first));
+      expect(number(third)).toBeGreaterThan(number(second));
+    });
+
+    it('UC-13/S1 comments left when approving reach the agent, with a prompt to raise them', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await post(`${id}/comments`, { scenario: 2, body: 'Hmm.. well.. Alright?' });
+      await post(`${id}/approve`);
+      const read = (await get(ref)).text;
+      expect(read).toContain('A person left comments on this revision when approving.');
+      expect(read).toContain('Hmm.. well.. Alright?');
+    });
+
+    it('UC-13/S2 approving without comments adds no such prompt', async () => {
+      const ref = await propose();
+      await post(`${(await inboxItem(ref)).id}/approve`);
+      expect((await get(ref)).text).not.toContain('left comments');
     });
   });
 });

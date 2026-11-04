@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "trial:setup": "tsx src/setup-trial.ts"
+    "trial:setup": "tsx src/setup-trial.ts",
+    "trial:import": "tsx src/import-trial.ts"
   },
   "dependencies": {
     "@cucumber/gherkin": "^42.0.1",

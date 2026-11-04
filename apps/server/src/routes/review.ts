@@ -7,8 +7,11 @@ import { notFound } from '../errors.js';
 import {
   approveUseCase,
   commentById,
+  keepUseCase,
   loadInbox,
+  rejectUseCase,
   requestChanges,
+  retireUseCase,
 } from '../service/usecases.js';
 
 const teamParams = z.object({ team: z.string().max(63) });
@@ -20,6 +23,10 @@ const commentBody = z.object({
 
 const changesBody = z.object({
   changes: z.string().trim().min(1, 'Say what should change.').max(10_000),
+});
+
+const reasonBody = z.object({
+  reason: z.string().trim().min(1, 'Say why.').max(10_000),
 });
 
 /** A malformed id can't be a use case, so it reads the same as one that isn't there. */
@@ -52,6 +59,31 @@ export function registerReviewRoutes(app: FastifyInstance, pool: Pool): void {
     return withScope(pool, { teamId: access.teamId }, async (db) =>
       requestChanges(db, await personActor(db, access), useCaseId(id), changes),
     );
+  });
+
+  // Only people reject and retire: teamAccess refuses every token, whatever an agent's mode.
+  app.post('/api/t/:team/usecases/:id/reject', async (request) => {
+    const { team, id } = useCaseParams.parse(request.params);
+    const { reason } = reasonBody.parse(request.body);
+    const access = await teamAccess(pool, request, team);
+    return withScope(pool, { teamId: access.teamId }, async (db) =>
+      rejectUseCase(db, await personActor(db, access), useCaseId(id), reason),
+    );
+  });
+
+  app.post('/api/t/:team/usecases/:id/retire', async (request) => {
+    const { team, id } = useCaseParams.parse(request.params);
+    const { reason } = reasonBody.parse(request.body);
+    const access = await teamAccess(pool, request, team);
+    return withScope(pool, { teamId: access.teamId }, async (db) =>
+      retireUseCase(db, await personActor(db, access), useCaseId(id), reason),
+    );
+  });
+
+  app.post('/api/t/:team/usecases/:id/keep', async (request) => {
+    const { team, id } = useCaseParams.parse(request.params);
+    const access = await teamAccess(pool, request, team);
+    return withScope(pool, { teamId: access.teamId }, (db) => keepUseCase(db, useCaseId(id)));
   });
 
   app.post('/api/t/:team/usecases/:id/comments', async (request, reply) => {

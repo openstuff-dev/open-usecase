@@ -16,8 +16,14 @@ export interface Me {
   teams: TeamRef[];
 }
 
-/** A use case's status. The trial has these three; the others arrive in phase 6 and 8. */
-export type UseCaseStatus = 'proposed' | 'changes_requested' | 'approved';
+/** A use case's status: retired, else done if a revision is live, else its latest revision's. */
+export type UseCaseStatus =
+  | 'proposed' |
+  'changes_requested' |
+  'approved' |
+  'rejected' |
+  'done' |
+  'retired';
 
 /** Which part of a scenario a step belongs to. */
 export type StepPhase = 'given' | 'when' | 'then';
@@ -58,7 +64,14 @@ export interface Comment {
   createdAt: string;
 }
 
-/** A use case waiting for a person. */
+/** An agent asks a person to retire a use case. */
+export interface RetirementRequest {
+  requestedBy: string;
+  requestedAt: string;
+  reason: string;
+}
+
+/** A use case waiting for a person: a revision to review, a retirement to decide, or both. */
 export interface InboxItem {
   id: string;
   /** `UC-142`. */
@@ -76,6 +89,9 @@ export interface InboxItem {
   preamble: GherkinBlock[];
   scenarios: Scenario[];
   comments: Comment[];
+  /** True if this revision waits for review. False if only the retirement is waiting. */
+  needsReview: boolean;
+  retirement: RetirementRequest | null;
 }
 
 export interface Inbox {

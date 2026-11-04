@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseCatalogueFile } from '../src/domain/catalogue-file.js';
 import {
   assignScenarioTags,
   GherkinError,
@@ -131,5 +132,35 @@ describe('Gherkin validation', () => {
       { keyword: 'Als', phase: 'when' },
       { keyword: 'Dan', phase: 'then' },
     ]);
+  });
+});
+
+describe('the catalogue file', () => {
+  it('reads use cases with their numbers, titles and whether a person approved them', () => {
+    const useCases = parseCatalogueFile(
+      [
+        '# Trial',
+        '### UC-4: Read it',
+        'Status: approved by the user',
+        '```gherkin',
+        'Feature: Read it',
+        '  @S1',
+        '  Scenario: A',
+        '    Given b',
+        '```',
+        '## UC-9: Later',
+        'Status: proposed, not built',
+        '```gherkin',
+        'Feature: Later',
+        '```',
+        '### UC-10: Has no Gherkin',
+        'Status: approved',
+      ].join('\n'),
+    );
+    expect(useCases).toMatchObject([
+      { number: 4, title: 'Read it', approved: true },
+      { number: 9, title: 'Later', approved: false },
+    ]);
+    expect(useCases[0]?.gherkin).toContain('@S1');
   });
 });
