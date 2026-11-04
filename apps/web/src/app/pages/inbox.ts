@@ -200,6 +200,12 @@ function textParts(text: string): { text: string; value: boolean }[] {
       color: var(--os-brand-text);
     }
 
+    .stanza + .stanza,
+    .stanza + .lines {
+      padding-block-start: var(--os-space-4);
+      border-block-start: 1px var(--os-border-style) var(--os-border-default);
+    }
+
     .lines {
       display: grid;
       gap: var(--os-space-2);
@@ -416,46 +422,29 @@ export class Comments {
                   <app-comments [comments]="comments" />
                 }
               }
-              @if (drafting()) {
-                <form class="draft" (ngSubmit)="saveComment(scenario)">
-                  <os-field [label]="'Comment on S' + scenario.number" [error]="commentError()">
-                    <textarea
-                      os-textarea
-                      name="body"
-                      rows="3"
-                      required
-                      [(ngModel)]="draft"
-                    ></textarea>
-                  </os-field>
-                  <div class="row">
-                    <button os-button size="sm" type="submit" [loading]="saving()">
-                      Save comment
-                    </button>
-                    <button
-                      os-button
-                      size="sm"
-                      variant="ghost"
-                      type="button"
-                      (click)="drafting.set(false)"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              } @else {
+              <form class="draft" (ngSubmit)="saveComment(scenario)">
+                <os-field [label]="'Comment on S' + scenario.number" [error]="commentError()">
+                  <textarea
+                    os-textarea
+                    name="body"
+                    rows="3"
+                    placeholder="Anything missing, wrong or unclear in this scenario?"
+                    [ngModel]="draftFor(scenario)"
+                    (ngModelChange)="setDraft(scenario, $event)"
+                  ></textarea>
+                </os-field>
                 <div>
                   <button
                     os-button
                     size="sm"
-                    variant="ghost"
-                    type="button"
-                    [attr.aria-label]="'Comment on ' + item().ref + '/S' + scenario.number"
-                    (click)="openDraft()"
+                    type="submit"
+                    [loading]="saving()"
+                    [disabled]="!draftFor(scenario).trim()"
                   >
-                    Comment
+                    Save comment
                   </button>
                 </div>
-              }
+              </form>
             </div>
           </section>
 
@@ -494,6 +483,11 @@ export class Comments {
         <button os-button type="button" (click)="openChanges()">Ask for changes</button>
         @if (!mayApprove()) {
           <p>Read every scenario to approve.</p>
+        }
+        @if (unsaved().length) {
+          <p class="unsaved">
+            Save or clear your comment on {{ unsaved().join(', ') }}. It isn't sent yet.
+          </p>
         }
       </div>
     </article>
@@ -710,6 +704,10 @@ export class Comments {
       color: var(--os-fg-muted);
       font-size: var(--os-text-sm);
     }
+
+    .decision .unsaved {
+      color: var(--os-warning-text);
+    }
   `,
 })
 export class UseCaseReview {
@@ -722,8 +720,8 @@ export class UseCaseReview {
   /** The use case was decided or commented on, so the list should load again. */
   readonly changed = output<{ decided?: string }>();
 
-  protected readonly drafting = signal(false);
-  protected draft = '';
+  /** Comments still being typed, per scenario, so moving between scenarios keeps them. */
+  private readonly drafts = signal(new Map<string, string>());
   protected readonly saving = signal(false);
   protected readonly commentError = signal<string | null>(null);
   protected readonly approving = signal(false);
@@ -740,6 +738,13 @@ export class UseCaseReview {
   protected readonly previous = computed(() => hasPrevious(this.reading()));
   protected readonly next = computed(() => hasNext(this.reading(), this.total()));
   protected readonly mayApprove = computed(() => canApprove(this.reading(), this.total()));
+
+  /** Scenarios with typed text that isn't saved, so nobody decides thinking it was sent. */
+  protected readonly unsaved = computed(() =>
+    this.item()
+      .scenarios.filter((scenario) => this.draftFor(scenario).trim())
+      .map((scenario) => `S${String(scenario.number)}`),
+  );
 
   /** The preamble, without a Feature line that only repeats the title above it. */
   protected readonly introBlocks = computed(() => {
@@ -773,7 +778,8 @@ export class UseCaseReview {
   }
 
   protected go(index: number): void {
-    this.drafting.set(false);
+    this.commentError.set(null);
+    this.commentKey.renew();
     this.moved.emit(moveTo(this.reading(), index, this.total()));
   }
 
@@ -781,10 +787,17 @@ export class UseCaseReview {
     return this.item().comments.filter((c) => c.scenario === scenario.number);
   }
 
-  protected openDraft(): void {
-    this.draft = '';
-    this.commentError.set(null);
-    this.drafting.set(true);
+  private draftKey(scenario: Scenario): string {
+    return `${this.item().id}/${String(scenario.number)}`;
+  }
+
+  protected draftFor(scenario: Scenario): string {
+    return this.drafts().get(this.draftKey(scenario)) ?? '';
+  }
+
+  protected setDraft(scenario: Scenario, text: string): void {
+    const key = this.draftKey(scenario);
+    this.drafts.update((all) => new Map(all).set(key, text));
   }
 
   protected async saveComment(scenario: Scenario): Promise<void> {
@@ -794,11 +807,11 @@ export class UseCaseReview {
     try {
       await this.api.post(
         `${this.base}/comments`,
-        { scenario: scenario.number, body: this.draft },
+        { scenario: scenario.number, body: this.draftFor(scenario) },
         this.commentKey.value,
       );
       this.commentKey.renew();
-      this.drafting.set(false);
+      this.setDraft(scenario, '');
       this.changed.emit({});
     } catch (error) {
       this.commentError.set(errorText(error));

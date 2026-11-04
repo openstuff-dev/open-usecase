@@ -7,7 +7,7 @@ proven.
 
 ## UC-1: A hard refresh reloads every open tab
 
-Status: proposed
+Status: approved by the user in the inbox, 2026-11-04. No text changed
 
 ```gherkin
 Feature: A hard refresh reloads every open tab
@@ -61,7 +61,7 @@ Feature: A hard refresh reloads every open tab
 
 ## UC-2: A rollback makes an older release live again
 
-Status: proposed
+Status: approved by the user in the inbox, 2026-11-04. No text changed
 
 ```gherkin
 Feature: A rollback makes an older release live again
