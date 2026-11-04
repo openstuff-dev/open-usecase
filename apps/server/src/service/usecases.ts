@@ -276,6 +276,92 @@ export async function requestChanges(
   return decided;
 }
 
+export interface UseCaseComment {
+  scenario: number | null;
+  revision: number;
+  body: string;
+  author: string;
+}
+
+export interface ReadUseCase {
+  ref: string;
+  title: string;
+  status: UseCaseStatus;
+  revision: number;
+  /** The latest revision's text. While it's approved, that is the approved text. */
+  gherkin: string;
+  comments: UseCaseComment[];
+}
+
+/** One use case as an agent reads it, in one query. Another team's simply isn't there. */
+export async function readUseCase(
+  db: Client,
+  input: { remote: string; ref: string },
+): Promise<ReadUseCase> {
+  const number = REF.exec(input.ref)?.[1];
+  const key = tryParseRemote(input.remote)?.key;
+  if (!number || !key) throw notFound(input.ref);
+  const { rows } = await db.query<Omit<ReadUseCase, 'ref'>>(
+    `SELECT u.title, latest.state AS status, latest.number AS revision, latest.gherkin,
+            coalesce((
+              SELECT json_agg(json_build_object(
+                       'scenario', c.scenario_number, 'revision', cr.number,
+                       'body', c.body, 'author', a.name
+                     ) ORDER BY c.created_at)
+                FROM comments c
+                JOIN revisions cr ON cr.id = c.revision_id
+                JOIN actors a ON a.id = c.author_id
+               WHERE c.use_case_id = u.id
+            ), '[]') AS comments
+       FROM repositories rp
+       JOIN use_cases u ON u.project_id = rp.project_id
+       JOIN LATERAL (
+         SELECT number, state, gherkin FROM revisions
+          WHERE use_case_id = u.id ORDER BY number DESC LIMIT 1
+       ) latest ON true
+      WHERE rp.remote_key = $1 AND u.number = $2`,
+    [key, Number(number)],
+  );
+  const row = rows.at(0);
+  if (!row) throw notFound(input.ref);
+  return { ...row, ref: input.ref };
+}
+
+export interface FoundUseCase {
+  ref: string;
+  title: string;
+  status: UseCaseStatus;
+  project: string;
+}
+
+/** Every word must match, as a word or the start of one: "colour" finds "colours". */
+const toSearchQuery = (words: string): string =>
+  (words.match(/[\p{L}\p{N}]+/gu) ?? []).map((word) => `'${word}':*`).join(' & ');
+
+/** Finds this team's use cases by the words in their title and latest text. */
+export async function searchUseCases(
+  db: Client,
+  input: { query: string; status?: UseCaseStatus | undefined },
+): Promise<FoundUseCase[]> {
+  const query = toSearchQuery(input.query);
+  if (!query) throw new HttpError(400, 'Search for at least one word.');
+  const { rows } = await db.query<Omit<FoundUseCase, 'ref'> & { number: number }>(
+    `SELECT u.number, u.title, latest.state AS status, p.name AS project
+       FROM use_cases u
+       JOIN projects p ON p.id = u.project_id
+       JOIN LATERAL (
+         SELECT state, gherkin FROM revisions
+          WHERE use_case_id = u.id ORDER BY number DESC LIMIT 1
+       ) latest ON true
+      WHERE to_tsvector('simple', u.title || ' ' || latest.gherkin) @@ to_tsquery('simple', $1)
+        AND ($2::text IS NULL OR latest.state = $2)
+      ORDER BY p.name, u.number
+      LIMIT 50`,
+    [query, input.status ?? null],
+  );
+  return rows.map(({ number, ...row }) => ({ ...row, ref: refOf(number) }));
+}
+
 /** Everything waiting for a person in this team, oldest first, in one query. */
 export async function loadInbox(db: Client): Promise<Inbox> {
   const { rows } = await db.query<

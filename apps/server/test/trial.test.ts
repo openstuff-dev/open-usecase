@@ -562,8 +562,10 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const { tools } = await (await agent(agentA.token)).listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
         'comment_on_usecase',
+        'get_usecase',
         'propose_usecase',
         'revise_usecase',
+        'search_usecases',
       ]);
     });
 
@@ -574,6 +576,144 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const made = await http({ cookie: adminA }, 'POST', `${path}/tokens`);
       expect(made.statusCode).toBe(201);
       expect(made.json<{ token: string }>().token).toMatch(/^uc_/);
+    });
+  });
+
+  describe('UC-4: an agent reads a use case', () => {
+    const get = (ref: string, token = agentA.token, remote = REMOTE_A) =>
+      call(token, 'get_usecase', { remote, id: ref });
+    const approve = async (ref: string) => {
+      const { id } = await inboxItem(ref);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
+    };
+
+    it('UC-4/S1 an approved use case gives its status and text, and says it is ready', async () => {
+      const ref = await propose();
+      await approve(ref);
+      const { text, isError } = await get(ref);
+      expect(isError).toBe(false);
+      expect(text).toContain('Status: approved.');
+      expect(text).toContain('It is ready to build.');
+      expect(text).toContain('Scenario: Change it');
+      expect(text).toContain('@S1');
+    });
+
+    it('UC-4/S2 a use case still waiting gives its text, and says clearly not to build', async () => {
+      const ref = await propose();
+      const { text } = await get(ref);
+      expect(text).toContain('Status: proposed.');
+      expect(text).toContain('Do not build it yet.');
+      expect(text).toContain('Scenario: Change it');
+      expect(text).not.toContain('ready to build');
+    });
+
+    it('UC-4/S3 after a change request it says to revise first, with each comment and its scenario', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/comments`, {
+        scenario: 2,
+        body: 'What does the error say?',
+      });
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/request-changes`, {
+        changes: 'Name the colours too.',
+      });
+      const { text } = await get(ref);
+      expect(text).toContain('Status: changes_requested.');
+      expect(text).toContain('Do not build it.');
+      expect(text).toContain(`Revise ${ref} first`);
+      expect(text).toContain(`On ${ref}/S2, by Mia (revision 1): What does the error say?`);
+      expect(text).toContain('On the whole use case, by Mia (revision 1): Name the colours too.');
+      expect(text).not.toContain('ready to build');
+    });
+
+    it('UC-4/S3 an agent reads the text of the newest revision after revising', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/request-changes`, {
+        changes: 'Rename it.',
+      });
+      await call(agentA.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'Renamed it.',
+        gherkin: 'Feature: Renamed\n\n  @S1\n  Scenario: Renamed scenario\n    Given a\n',
+      });
+      const { text } = await get(ref);
+      expect(text).toContain('Revision 2.');
+      expect(text).toContain('Scenario: Renamed scenario');
+      expect(text).not.toContain('Scenario: Change it');
+    });
+
+    it('UC-4/S1 a use case that does not exist reads as not found', async () => {
+      expect(await get('UC-999999')).toMatchObject({ isError: true, text: "UC-999999 wasn't found." });
+      expect(await get('nonsense')).toMatchObject({ isError: true });
+    });
+
+    it('UC-4/S4 search finds use cases by their words, each with its ID and status', async () => {
+      const word = `zebra${String(Date.now())}`;
+      const gherkin = `Feature: Stripes\n\n  Scenario: Show the ${word}s\n    When I look\n    Then I see them\n`;
+      const waiting = await propose(gherkin);
+      const decided = await propose(gherkin);
+      await approve(decided);
+      await propose();
+
+      const { text } = await call(agentA.token, 'search_usecases', { query: word });
+      expect(text).toContain(`${waiting} (Shop): Change the colour. Status: proposed.`);
+      expect(text).toContain(`${decided} (Shop): Change the colour. Status: approved.`);
+      expect(text.trim().split('\n')).toHaveLength(2);
+    });
+
+    it('UC-4/S4 search can ask for one status', async () => {
+      const word = `quagga${String(Date.now())}`;
+      const gherkin = `Feature: Stripes\n\n  Scenario: Show the ${word}\n    When I look\n    Then I see it\n`;
+      const waiting = await propose(gherkin);
+      const decided = await propose(gherkin);
+      await approve(decided);
+
+      const { text } = await call(agentA.token, 'search_usecases', {
+        query: word,
+        status: 'approved',
+      });
+      expect(text).toContain(decided);
+      expect(text).not.toContain(`${waiting} `);
+    });
+
+    it('UC-4/S4 quotes and symbols in a search are only words, and no words is refused', async () => {
+      const odd = await call(agentA.token, 'search_usecases', { query: `nothing' & !:* (here` });
+      expect(odd).toMatchObject({ isError: false, text: 'No use cases match.' });
+      expect(await call(agentA.token, 'search_usecases', { query: '!!!' })).toMatchObject({
+        isError: true,
+        text: 'Search for at least one word.',
+      });
+    });
+
+    it('UC-4/S4 an agent gets nothing from another team, by search or by ID', async () => {
+      const word = `okapi${String(Date.now())}`;
+      const gherkin = `Feature: Forest\n\n  Scenario: Show the ${word}\n    When I look\n    Then I see it\n`;
+      const inBravo = await propose(gherkin, agentB.token, REMOTE_B);
+
+      const search = await call(agentA.token, 'search_usecases', { query: word });
+      expect(search.text).toBe('No use cases match.');
+      expect(await get(inBravo, agentA.token, REMOTE_B)).toMatchObject({
+        isError: true,
+        text: `${inBravo} wasn't found.`,
+      });
+      expect((await call(agentB.token, 'search_usecases', { query: word })).text).toContain(inBravo);
+    });
+  });
+
+  describe('UC-5: what an agent is told (the behaviour itself is proven by a real agent)', () => {
+    it('UC-5/S1 the server tells a connecting agent to end its turn, and not to poll or build', async () => {
+      const instructions = must((await agent(agentA.token)).getInstructions(), 'instructions');
+      expect(instructions).toContain('end your turn and tell the user');
+      expect(instructions).toContain("Don't keep checking its status");
+      expect(instructions).toContain("don't start building");
+    });
+
+    it('UC-5/S2 the server tells it to fetch the status on return, and to revise before building', async () => {
+      const instructions = must((await agent(agentA.token)).getInstructions(), 'instructions');
+      expect(instructions).toContain('Call get_usecase once. Build only if the status is approved.');
+      expect(instructions).toContain('If changes were requested');
     });
   });
 });

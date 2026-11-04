@@ -101,7 +101,7 @@ Feature: Teams and permissions stay apart
 
 ### UC-4: An agent reads a use case
 
-Status: the user said it looks ready to go, 2026-11-04. No text changed. To be confirmed in the new inbox
+Status: approved by the user in the inbox, 2026-11-04. No text changed
 
 ```gherkin
 Feature: An agent reads a use case
