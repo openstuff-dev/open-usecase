@@ -3,11 +3,13 @@ import {
   Component,
   computed,
   DestroyRef,
+  type ElementRef,
   effect,
   inject,
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { Comment, Glossary, GlossaryTerm, Inbox, InboxItem, Scenario } from '@open-usecase/contracts';
@@ -138,14 +140,16 @@ import {
                 >
                   S{{ entry.number }}
                   @if (commentsOn(entry).length; as count) {
-                    <span class="count" [attr.aria-label]="count + ' comments'">{{ count }}</span>
+                    <span class="count"
+                      >{{ count }}<span class="os-visually-hidden"> comments</span></span
+                    >
                   }
                 </button>
               </li>
             }
           </ol>
 
-          <section class="card" aria-live="polite">
+          <section class="card">
             <div class="number" aria-hidden="true">{{ reading().at + 1 }}</div>
             <div class="content">
               <div>
@@ -154,7 +158,7 @@ import {
                     scenario.number
                   }}
                 </p>
-                <h3 class="name">{{ scenario.name }}</h3>
+                <h3 #scenarioName class="name" tabindex="-1">{{ scenario.name }}</h3>
               </div>
               <app-gherkin [blocks]="scenario.blocks" [terms]="glossary().terms" />
               @if (commentsOn(scenario); as comments) {
@@ -489,6 +493,10 @@ import {
       font-variant-numeric: tabular-nums;
     }
 
+    .name:focus {
+      outline: none;
+    }
+
     .name {
       margin: 0;
       font-size: var(--os-text-lg);
@@ -576,6 +584,7 @@ export class UseCaseReview {
   protected readonly sending = signal(false);
   protected readonly askError = signal<string | null>(null);
   private readonly commentKey = new IdempotencyKey();
+  private readonly scenarioName = viewChild<ElementRef<HTMLElement>>('scenarioName');
   private readonly decisionKey = new IdempotencyKey();
 
   protected readonly total = computed(() => this.item().scenarios.length);
@@ -650,6 +659,9 @@ export class UseCaseReview {
     this.commentError.set(null);
     this.commentKey.renew();
     this.moved.emit(moveTo(this.reading(), index, this.total()));
+    // Next turns off on the last scenario, which would drop keyboard focus to the top of the page.
+    // The new scenario's name takes it, so a screen reader also says what's on screen now.
+    this.scenarioName()?.nativeElement.focus();
   }
 
   protected commentsOn(scenario: Scenario): Comment[] {

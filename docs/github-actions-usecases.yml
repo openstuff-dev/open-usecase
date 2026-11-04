@@ -1,0 +1,48 @@
+# A sample workflow for your repository: copy it to .github/workflows/usecases.yml.
+#
+# Add two repository settings: the variable OPENUSECASE_URL and the secret OPENUSECASE_TOKEN, a CI
+# token from Settings in OpenUsecase. Your tests write JUnit XML to results.xml, and each test that
+# proves a scenario has its ID in its name: "UC-142/S2 refuses a bad colour".
+name: Use cases
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  usecases:
+    runs-on: ubuntu-latest
+    env:
+      OPENUSECASE_URL: ${{ vars.OPENUSECASE_URL }}
+      OPENUSECASE_TOKEN: ${{ secrets.OPENUSECASE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm ci
+
+      # Your tests, writing JUnit XML. Keep going when they fail: a failing test is evidence too.
+      - run: npm test -- --reporter=junit --outputFile=results.xml
+        continue-on-error: true
+
+      # On a pull request: the body has to name approved use cases, and every scenario needs a
+      # tagged test. The body is passed through a file, so nothing in it runs as a command.
+      - name: Check the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_BODY" > pr-body.md
+          npx @openstuff-dev/usecase check --pr-body pr-body.md results.xml
+
+      # On the default branch: this is what makes a use case read "done" and "passing".
+      - name: Report the results
+        if: github.event_name == 'push'
+        run: npx @openstuff-dev/usecase report --suite unit results.xml

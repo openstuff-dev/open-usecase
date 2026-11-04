@@ -1,6 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import type { Comment, ScenarioEvidence, UseCaseDetail } from '@open-usecase/contracts';
 import {
@@ -448,6 +449,7 @@ import {
 export class UseCasePage {
   private readonly api = inject(Api);
   private readonly toaster = inject(Toaster);
+  private readonly title = inject(Title);
   readonly team = input.required<string>();
   readonly id = input.required<string>();
   protected readonly useCase = signal<UseCaseDetail | null>(null);
@@ -507,6 +509,7 @@ export class UseCasePage {
       );
       if (load !== this.latest) return;
       this.useCase.set(useCase);
+      this.title.setTitle(`${useCase.ref}: ${useCase.title} · OpenUsecase`);
       this.areaName = useCase.area ?? '';
       this.error.set(null);
     } catch (error) {

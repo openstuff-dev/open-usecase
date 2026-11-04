@@ -4,14 +4,24 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/usecase/package.json packages/usecase/
+
+# The types both apps share. It's only needed while building.
+FROM manifests AS contracts
+RUN npm ci -w packages/contracts
+COPY packages/contracts/ packages/contracts/
+RUN npm run build -w packages/contracts
 
 FROM manifests AS web
 RUN npm ci -w apps/web
+COPY --from=contracts /app/packages/contracts packages/contracts
 COPY apps/web/ apps/web/
 RUN npm run tokens -w apps/web && npm run build -w apps/web
 
 FROM manifests AS server
 RUN npm ci -w apps/server
+COPY --from=contracts /app/packages/contracts packages/contracts
 COPY apps/server/ apps/server/
 RUN npm run build -w apps/server
 
@@ -28,6 +38,7 @@ COPY --from=server-deps /app/node_modules /app/node_modules
 COPY --from=server-deps /app/apps/server/node_modules ./node_modules
 COPY --from=server /app/apps/server/dist ./dist
 COPY --from=server /app/apps/server/package.json ./
+COPY apps/server/migrations ./migrations
 COPY --from=web /app/apps/web/dist/web/browser /app/web
 USER node
 EXPOSE 8080

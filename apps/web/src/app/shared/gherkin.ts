@@ -87,7 +87,7 @@ function textParts(text: string, terms: readonly GlossaryTerm[]): TextPart[] {
         @if (part.value) {
           <code>{{ part.text }}</code>
         } @else if (part.definition !== null) {
-          <span class="term" tabindex="0" [title]="part.definition">{{ part.text }}</span>
+          <span class="term" [title]="part.definition">{{ part.text }}</span>
         } @else {
           <span>{{ part.text }}</span>
         }
