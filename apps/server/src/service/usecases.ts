@@ -264,8 +264,17 @@ async function decide(
 export const approveUseCase = (db: Client, actor: Actor, id: string) =>
   decide(db, actor, id, 'approved');
 
-export const requestChanges = (db: Client, actor: Actor, id: string) =>
-  decide(db, actor, id, 'changes_requested');
+/** The person says what should change. It joins any comments they left on single scenarios. */
+export async function requestChanges(
+  db: Client,
+  actor: Actor,
+  id: string,
+  changes: string,
+): Promise<{ status: UseCaseStatus }> {
+  const decided = await decide(db, actor, id, 'changes_requested');
+  await addComment(db, actor, id, 'That use case', changes, undefined);
+  return decided;
+}
 
 /** Everything waiting for a person in this team, oldest first, in one query. */
 export async function loadInbox(db: Client): Promise<Inbox> {

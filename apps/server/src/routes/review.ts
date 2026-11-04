@@ -18,6 +18,10 @@ const commentBody = z.object({
   scenario: z.number().int().positive().optional(),
 });
 
+const changesBody = z.object({
+  changes: z.string().trim().min(1, 'Say what should change.').max(10_000),
+});
+
 /** A malformed id can't be a use case, so it reads the same as one that isn't there. */
 function useCaseId(id: string): string {
   const parsed = z.uuid().safeParse(id);
@@ -43,9 +47,10 @@ export function registerReviewRoutes(app: FastifyInstance, pool: Pool): void {
 
   app.post('/api/t/:team/usecases/:id/request-changes', async (request) => {
     const { team, id } = useCaseParams.parse(request.params);
+    const { changes } = changesBody.parse(request.body);
     const access = await teamAccess(pool, request, team);
     return withScope(pool, { teamId: access.teamId }, async (db) =>
-      requestChanges(db, await personActor(db, access), useCaseId(id)),
+      requestChanges(db, await personActor(db, access), useCaseId(id), changes),
     );
   });
 

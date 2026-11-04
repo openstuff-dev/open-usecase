@@ -19,12 +19,32 @@ export interface Me {
 /** A use case's status. The trial has these three; the others arrive in phase 6 and 8. */
 export type UseCaseStatus = 'proposed' | 'changes_requested' | 'approved';
 
+/** Which part of a scenario a step belongs to. */
+export type StepPhase = 'given' | 'when' | 'then';
+
+/** One piece of Gherkin, read in the project's language. Together they hold every line. */
+export type GherkinBlock =
+  | { kind: 'heading'; keyword: string; text: string } |
+  {
+    kind: 'step';
+    /** What the keyword means, whatever the language: `and` carries on the part before it. */
+    type: StepPhase | 'and' | 'but' | 'star';
+    phase: StepPhase | null;
+    keyword: string;
+    text: string;
+  } |
+  { kind: 'table'; rows: string[][] } |
+  { kind: 'doc'; text: string } |
+  { kind: 'tag'; text: string } |
+  { kind: 'comment'; text: string } |
+  { kind: 'text'; text: string };
+
 export interface Scenario {
   /** `2` in `UC-142/S2`. */
   number: number;
   name: string;
-  /** The Gherkin as written, without its tag: steps, tables and all. */
-  text: string;
+  /** Everything that belongs to it except its `Scenario:` line and its `@S2` tag. */
+  blocks: GherkinBlock[];
 }
 
 export interface Comment {
@@ -53,7 +73,7 @@ export interface InboxItem {
   /** What the agent says changed since the last revision. */
   whatChanged: string | null;
   /** The Gherkin before the first scenario: the Feature line, a description, a Background. */
-  preamble: string;
+  preamble: GherkinBlock[];
   scenarios: Scenario[];
   comments: Comment[];
 }

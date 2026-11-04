@@ -8,6 +8,7 @@
     "serve": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "stylelint": "stylelint \"src/**/*.css\""
   },
@@ -32,6 +33,7 @@
     "@angular/cli": "~22.2.4",
     "@angular/compiler-cli": "~22.2.3",
     "typescript": "~6.0.3",
+    "vitest": "^5.0.1",
     "@open-usecase/contracts": "*"
   },
   "nx": {

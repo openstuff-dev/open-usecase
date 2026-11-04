@@ -5,6 +5,13 @@ export default [
   { ignores: ['src/tokens'] },
   ...angular,
   {
+    // Tests and the Vitest config sit outside the tsconfig, which only builds src.
+    files: ['**/*.ts'],
+    languageOptions: {
+      parserOptions: { projectService: { allowDefaultProject: ['test/*.ts', 'vitest.config.ts'] } },
+    },
+  },
+  {
     files: ['**/*.ts'],
     rules: {
       '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'app', style: 'kebab-case' }],

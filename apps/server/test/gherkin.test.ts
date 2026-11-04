@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { assignScenarioTags, GherkinError, parseUseCase } from '../src/domain/gherkin.js';
+import {
+  assignScenarioTags,
+  GherkinError,
+  parseUseCase,
+  splitForReview,
+} from '../src/domain/gherkin.js';
 
 const valid = `Feature: Change the colour
 
@@ -62,5 +67,69 @@ describe('Gherkin validation', () => {
       ['Reworded', 2],
     ]);
     expect(result.nextNumber).toBe(4);
+  });
+
+  it('UC-2/S1 shows a tag and a comment above a scenario, and leaves out only the ID', () => {
+    const { scenarios } = splitForReview(
+      'Feature: F\n\n  # Agreed with support.\n  @S1 @manual\n  Scenario: One\n    Given a\n',
+      'en',
+    );
+    expect(scenarios[0]?.blocks).toMatchObject([
+      { kind: 'comment', text: 'Agreed with support.' },
+      { kind: 'tag', text: '@manual' },
+      { kind: 'step', text: 'a' },
+    ]);
+  });
+
+  it('UC-2/S1 shows a Rule with the scenario it opens, not inside the one before', () => {
+    const { scenarios } = splitForReview(
+      'Feature: F\n\n  @S1\n  Scenario: One\n    Given a\n\n  Rule: Only admins\n\n    @S2\n    Scenario: Two\n      Given b\n',
+      'en',
+    );
+    expect(scenarios[0]?.blocks).toMatchObject([{ kind: 'step', text: 'a' }]);
+    expect(scenarios[1]?.blocks).toMatchObject([
+      { kind: 'heading', keyword: 'Rule', text: 'Only admins' },
+      { kind: 'step', text: 'b' },
+    ]);
+  });
+
+  it('UC-2/S1 keeps doc strings and tables whole, and every line of them shows', () => {
+    const { scenarios } = splitForReview(
+      [
+        'Feature: F',
+        '  Scenario: One',
+        '    Then I get:',
+        '      """',
+        '      # not a comment',
+        '      | not a table |',
+        '      """',
+        '    And these:',
+        '      | a \\| b | c |',
+      ].join('\n'),
+      'en',
+    );
+    expect(scenarios[0]?.blocks).toMatchObject([
+      { kind: 'step', type: 'then', phase: 'then' },
+      { kind: 'doc', text: '# not a comment\n| not a table |' },
+      { kind: 'step', type: 'and', phase: 'then' },
+      { kind: 'table', rows: [['a | b', 'c']] },
+    ]);
+  });
+
+  it('UC-2/S1 reads steps in the project language', () => {
+    const { preamble, scenarios } = splitForReview(
+      '# language: nl\nFunctionaliteit: F\n  Scenario: Een\n    Gegeven a\n    En b\n    Als c\n    Dan d\n',
+      'nl',
+    );
+    expect(preamble).toMatchObject([
+      { kind: 'comment' },
+      { kind: 'heading', keyword: 'Functionaliteit', text: 'F' },
+    ]);
+    expect(scenarios[0]?.blocks).toMatchObject([
+      { keyword: 'Gegeven', phase: 'given' },
+      { keyword: 'En', type: 'and', phase: 'given' },
+      { keyword: 'Als', phase: 'when' },
+      { keyword: 'Dan', phase: 'then' },
+    ]);
   });
 });

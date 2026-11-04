@@ -161,10 +161,14 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         project: { slug: 'shop' },
       });
       expect(item.scenarios.map((s) => s.number)).toEqual([1, 2]);
-      expect(item.preamble).toBe('Feature: Change the colour');
-      expect(item.scenarios[0]?.text).toBe(
-        'Scenario: Change it\n  When I change the primary colour\n  Then the app uses the new colour',
-      );
+      expect(item.preamble).toEqual([
+        { kind: 'heading', keyword: 'Feature', text: 'Change the colour' },
+      ]);
+      expect(item.scenarios[0]?.name).toBe('Change it');
+      expect(item.scenarios[0]?.blocks).toMatchObject([
+        { kind: 'step', phase: 'when', text: 'I change the primary colour' },
+        { kind: 'step', phase: 'then', text: 'the app uses the new colour' },
+      ]);
     });
 
     it('UC-1/S2 Gherkin that does not parse is refused with a reason, and nothing arrives', async () => {
@@ -241,12 +245,13 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       | red    |
 `);
       const item = await inboxItem(ref);
-      expect(item.preamble).toContain('Only admins can change colours.');
-      expect(item.preamble).toContain('Given I am an admin');
-      const text = must(item.scenarios[0]).text;
+      const preamble = JSON.stringify(item.preamble);
+      expect(preamble).toContain('Only admins can change colours.');
+      expect(preamble).toContain('I am an admin');
+      const text = JSON.stringify(must(item.scenarios[0]).blocks);
       expect(text).toContain('This is about the settings page.');
-      expect(text).toContain('| header |');
-      expect(text).toContain('| red    |');
+      expect(text).toContain('header');
+      expect(text).toContain('red');
     });
 
     it('UC-2/S1 a member approves a proposal, and it leaves the inbox', async () => {
@@ -293,9 +298,45 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inboxItem(ref)).comments).toMatchObject([
         { scenario: 2, body: 'What does the error say?', author: 'Mia', revision: 1 },
       ]);
-      const response = await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/request-changes`);
+      const response = await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/request-changes`, {
+        changes: 'Name the error.',
+      });
       expect(response.json()).toEqual({ status: 'changes_requested' });
       expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
+    });
+
+    it('UC-9/S4 asking for changes without saying what is refused, and changes nothing', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/comments`, {
+        scenario: 1,
+        body: 'A comment alone is not enough.',
+      });
+      for (const payload of [{}, { changes: '   ' }]) {
+        const response = await http(
+          { cookie: memberA },
+          'POST',
+          `/api/t/acme/usecases/${id}/request-changes`,
+          payload,
+        );
+        expect(response.statusCode).toBe(400);
+      }
+      expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(true);
+    });
+
+    it('UC-9/S4 what the person typed reaches the use case, next to their comments', async () => {
+      const { ref, id } = await changesRequested();
+      const { rows } = await withScope(pool, { bypass: true }, (db) =>
+        db.query<{ scenario_number: number | null; body: string }>(
+          'SELECT scenario_number, body FROM comments WHERE use_case_id = $1 ORDER BY created_at',
+          [id],
+        ),
+      );
+      expect(rows).toEqual([
+        { scenario_number: 1, body: 'Say which colours work.' },
+        { scenario_number: null, body: 'Be specific.' },
+      ]);
+      expect(ref).toMatch(/^UC-/);
     });
 
     it('UC-2/S2 a comment on a scenario the use case does not have is refused', async () => {
@@ -314,7 +355,9 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         scenario: 1,
         body: 'Say which colours work.',
       });
-      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/request-changes`);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/request-changes`, {
+        changes: 'Be specific.',
+      });
       return { ref, id };
     }
 
@@ -352,6 +395,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       ]);
       expect(item.comments).toMatchObject([
         { scenario: 1, body: 'Say which colours work.', revision: 1 },
+        { scenario: null, body: 'Be specific.', revision: 1 },
       ]);
     });
 
