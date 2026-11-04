@@ -3,13 +3,21 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Inbox, InboxItem, TeamSettings } from '@open-usecase/contracts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type {
+  Catalogue,
+  Inbox,
+  InboxItem,
+  TeamExport,
+  TeamSettings,
+  UseCaseDetail,
+} from '@open-usecase/contracts';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { createPool, migrate, type Pool, withScope } from '../src/db.js';
 import { addMember, createAgent, createProject, createTeam } from '../src/service/setup.js';
+import { type CheckAnswer, uploadReport } from '../src/service/reports.js';
 
 // These tests need Postgres: TEST_DATABASE_URL=postgres://user:pass@localhost:5432/openusecase_test.
 // The database is emptied first. Agents connect over real HTTP, with the real MCP client.
@@ -567,8 +575,10 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     it('UC-3/S3 MCP offers an agent no way to manage tokens or permissions', async () => {
       const { tools } = await (await agent(agentA.token)).listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
+        'claim_done',
         'comment_on_usecase',
         'get_usecase',
+        'list_without_evidence',
         'propose_usecase',
         'request_retirement',
         'review_usecase',
@@ -1125,6 +1135,540 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await admin('DELETE', `/members/${accountId}`)).statusCode).toBe(200);
       const self = settings.members.find((m) => m.email === 'ada@acme.test');
       expect((await admin('DELETE', `/members/${must(self).accountId}`)).statusCode).toBe(409);
+    });
+  });
+
+  describe('reports, health and going live', () => {
+    const REMOTE_C = 'https://github.com/acme/api-server.git';
+    let ci: { token: string };
+    const junit = (tests: Record<string, 'pass' | 'fail' | 'skip'>) =>
+      `<?xml version="1.0"?><testsuites><testsuite name="s">${Object.entries(tests)
+        .map(([name, r]) =>
+          r === 'pass'
+            ? `<testcase classname="c" name="${name}"/>`
+            : r === 'fail'
+              ? `<testcase classname="c" name="${name}"><failure>no</failure></testcase>`
+              : `<testcase classname="c" name="${name}"><skipped/></testcase>`,
+        )
+        .join('')}</testsuite></testsuites>`;
+    const report = (xml: string, over: object = {}, token = ci.token) =>
+      http({ token }, 'POST', '/api/v1/reports', {
+        remote: REMOTE_A,
+        branch: 'main',
+        suite: 'unit',
+        commit: 'abc1234def',
+        junit: xml,
+        ...over,
+      });
+    const get = async (ref: string) =>
+      (await call(agentA.token, 'get_usecase', { remote: REMOTE_A, id: ref })).text;
+    const eventsOf = (ref: string) =>
+      withScope(pool, { bypass: true }, async (db) => {
+        const { rows } = await db.query<{ scenario_number: number; health: string }>(
+          `SELECT e.scenario_number, e.health FROM scenario_events e
+             JOIN use_cases u ON u.id = e.use_case_id
+            WHERE u.number = $1 AND u.team_id = (SELECT id FROM teams WHERE slug = 'acme')
+            ORDER BY e.created_at`,
+          [Number(ref.slice(3))],
+        );
+        return rows;
+      });
+    async function approved() {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
+      return { ref, id };
+    }
+    const claim = (ref: string) =>
+      call(agentA.token, 'claim_done', {
+        remote: REMOTE_A,
+        id: ref,
+        pr_url: 'https://github.com/acme/shop/pull/7',
+        merge_sha: 'abc1234def',
+      });
+
+    beforeAll(async () => {
+      const created = await http({ cookie: adminA }, 'POST', '/api/t/acme/actors', {
+        name: 'CI',
+        kind: 'ci',
+      });
+      ci = created.json<{ token: string }>();
+      const shop = (await http({ cookie: adminA }, 'GET', '/api/t/acme/settings')).json<TeamSettings>();
+      const project = must(shop.projects.find((p) => p.slug === 'shop'));
+      await http({ cookie: adminA }, 'POST', `/api/t/acme/projects/${project.id}/repositories`, {
+        remote: REMOTE_C,
+      });
+    });
+
+    it('UC-15/S1 a report with tagged tests makes scenarios pass, and the file is not stored', async () => {
+      const { ref } = await approved();
+      const response = await report(junit({ [`${ref}/S1 changes it`]: 'pass', [`${ref}/S2 refuses`]: 'pass' }));
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ scenarios: 2, unknownTags: [], wentLive: [] });
+      const text = await get(ref);
+      expect(text).toContain('Health: passing.');
+      expect(text).toContain(`${ref}/S1: passing`);
+      const columns = await withScope(pool, { bypass: true }, (db) =>
+        db.query<{ table_name: string; column_name: string }>(
+          `SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND column_name ~* 'junit|xml|report_file|raw'`,
+        ),
+      );
+      expect(columns.rows).toEqual([]);
+    });
+
+    it('UC-15/S2 a repeat report adds no history', async () => {
+      const { ref } = await approved();
+      const xml = junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' });
+      await report(xml);
+      const first = await eventsOf(ref);
+      expect(first).toHaveLength(2);
+      await report(xml);
+      expect(await eventsOf(ref)).toEqual(first);
+    });
+
+    it('UC-15/S3 a deleted or skipped test becomes no evidence', async () => {
+      const { ref } = await approved();
+      await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
+      await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'skip' }));
+      expect(await get(ref)).toContain(`${ref}/S2: no evidence`);
+      await report(junit({ [`${ref}/S2 b`]: 'pass' }));
+      const text = await get(ref);
+      expect(text).toContain(`${ref}/S1: no evidence`);
+      expect(text).toContain('Health: no evidence.');
+    });
+
+    it('UC-15/S4 one failing repository makes the scenario fail', async () => {
+      const { ref } = await approved();
+      await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
+      await report(junit({ [`${ref}/S1 a`]: 'fail' }), { remote: REMOTE_C });
+      const text = await get(ref);
+      expect(text).toContain(`${ref}/S1: failing`);
+      expect(text).toContain('Health: failing.');
+      expect(await eventsOf(ref)).toContainEqual({ scenario_number: 1, health: 'failing' });
+    });
+
+    it('UC-15/S5 suites do not overwrite each other', async () => {
+      const { ref } = await approved();
+      await report(junit({ [`${ref}/S1 a`]: 'pass' }), { suite: 'unit' });
+      await report(junit({ [`${ref}/S2 b`]: 'pass' }), { suite: 'e2e' });
+      expect(await get(ref)).toContain('Health: passing.');
+    });
+
+    it('UC-15/S6 a report from another branch is refused, and changes nothing', async () => {
+      const { ref } = await approved();
+      const response = await report(junit({ [`${ref}/S1 a`]: 'pass' }), { branch: 'feature/x' });
+      expect(response.statusCode).toBe(409);
+      expect(response.json<{ error: string }>().error).toContain('default branch, main');
+      expect(await get(ref)).toContain(`${ref}/S1: no evidence`);
+    });
+
+    it('UC-15/S7 an unknown or retired ID does not fail, and the answer lists it', async () => {
+      const { ref, id } = await approved();
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/retire`, { reason: 'Gone.' });
+      const response = await report(junit({ 'UC-999999/S1 old': 'pass', [`${ref}/S1 a`]: 'pass' }));
+      expect(response.statusCode).toBe(200);
+      expect(response.json<{ unknownTags: string[] }>().unknownTags).toEqual(
+        expect.arrayContaining(['UC-999999/S1', `${ref}/S1`]),
+      );
+    });
+
+    it('UC-15/S8 only a CI token can upload, and bad XML is refused', async () => {
+      expect((await report('<testsuites/>', {}, agentA.token)).statusCode).toBe(403);
+      expect((await http({ cookie: memberA }, 'POST', '/api/v1/reports', {})).statusCode).toBe(401);
+      expect((await report('not xml')).statusCode).toBe(400);
+      const refused = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${ci.token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(refused.status).toBe(403);
+    });
+
+    it('UC-15/S9 a report takes a small, fixed number of database round trips', async () => {
+      const { rows } = await pool.query<{ id: string }>(`SELECT id FROM teams WHERE slug = 'acme'`);
+      const teamId = must(rows[0]).id;
+      const { ref } = await approved();
+      const many = Object.fromEntries(
+        Array.from({ length: 200 }, (_, i) => [`${ref}/S1 test ${String(i)}`, 'pass' as const]),
+      );
+      await withScope(pool, { teamId }, async (db) => {
+        const spy = vi.spyOn(db, 'query');
+        await uploadReport(db, { teamId }, {
+          remote: REMOTE_A,
+          branch: 'main',
+          suite: 'many',
+          commit: 'abc1234def',
+          junit: junit(many),
+        });
+        expect(spy.mock.calls.length).toBeLessThanOrEqual(8);
+        spy.mockRestore();
+      });
+    });
+
+    it('UC-16/S1 a claimed use case goes live on the next good report: done, passing', async () => {
+      const { ref } = await approved();
+      const xml = junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' });
+      expect((await claim(ref)).isError).toBe(false);
+      expect(await get(ref)).toContain('Status: approved.');
+      const response = await report(xml);
+      expect(response.json<{ wentLive: string[] }>().wentLive).toContain(ref);
+      const text = await get(ref);
+      expect(text).toContain('Status: done. Health: passing.');
+    });
+
+    it('UC-16/S2 breaking its test reads done, failing, and the status stays', async () => {
+      const { ref } = await approved();
+      await claim(ref);
+      await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
+      await report(junit({ [`${ref}/S1 a`]: 'fail', [`${ref}/S2 b`]: 'pass' }));
+      expect(await get(ref)).toContain('Status: done. Health: failing.');
+    });
+
+    it('UC-16/S3 passing tests alone do not make an approved use case go live', async () => {
+      const { ref } = await approved();
+      const response = await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
+      expect(response.json<{ wentLive: string[] }>().wentLive).toEqual([]);
+      expect(await get(ref)).toContain('Status: approved.');
+    });
+
+    it('UC-16/S4 a new revision does not go live before its claim, and needs all its scenarios', async () => {
+      const { ref, id } = await approved();
+      await claim(ref);
+      await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
+      const revised = await call(agentA.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'A new scenario',
+        gherkin: `Feature: Change the colour
+
+  @S1
+  Scenario: Change it
+    When I change the primary colour
+    Then the app uses the new colour
+
+  @S2
+  Scenario: Refuse a bad colour
+    When I enter a value that isn't a colour
+    Then I see an error
+
+  Scenario: Reset it
+    When I reset the colour
+    Then the app uses the default
+`,
+      });
+      expect(revised.isError, revised.text).toBe(false);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
+
+      const old = junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' });
+      expect((await report(old)).json<{ wentLive: string[] }>().wentLive).toEqual([]);
+      expect(await get(ref)).toContain('Revision 1 is live');
+
+      await claim(ref);
+      expect((await report(old)).json<{ wentLive: string[] }>().wentLive).toEqual([]);
+
+      const all = junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass', [`${ref}/S3 c`]: 'pass' });
+      expect((await report(all)).json<{ wentLive: string[] }>().wentLive).toContain(ref);
+      const text = await get(ref);
+      expect(text).toContain('Status: done. Health: passing. Revision 2.');
+      expect(text).not.toContain('The live text');
+    });
+
+    it('UC-16/S5 only the latest approved revision can be claimed', async () => {
+      const claimed = await claim(await propose());
+      expect(claimed).toMatchObject({ isError: true });
+      expect(claimed.text).toContain("can't be claimed");
+    });
+
+    it('UC-16/S6 search filters by health and by how it was approved', async () => {
+      const word = `saola${String(Date.now())}`;
+      const gherkin = `Feature: F\n\n  Scenario: ${word}\n    When I look\n    Then I see\n`;
+      const ref = await propose(gherkin);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${(await inboxItem(ref)).id}/approve`);
+      const find = async (args: object) =>
+        (await call(agentA.token, 'search_usecases', { query: word, ...args })).text;
+      expect(await find({ health: 'no_evidence' })).toContain(ref);
+      expect(await find({ health: 'passing' })).toBe('No use cases match.');
+      expect(await find({ approval: 'human' })).toContain(ref);
+      expect(await find({ approval: 'auto_approve' })).toBe('No use cases match.');
+    });
+
+    describe('the PR check', () => {
+      const check = (body: object, token = ci.token) =>
+        http({ token }, 'POST', '/api/v1/check', { remote: REMOTE_A, ...body });
+
+      it('UC-17/S1 no IDs and no exemption fails', async () => {
+        const { ok, problems } = (await check({})).json<CheckAnswer>();
+        expect(ok).toBe(false);
+        expect(problems[0]).toContain('Use cases: UC-142');
+      });
+
+      it('UC-17/S2 an exemption passes, and the reason is visible', async () => {
+        const answer = (await check({ exemption: 'Dependency bump.' })).json<CheckAnswer>();
+        expect(answer).toEqual({ ok: true, problems: [], notes: ['Exempt: Dependency bump.'] });
+      });
+
+      it('UC-17/S3 an unapproved use case fails', async () => {
+        const ref = await propose();
+        const { ok, problems } = (await check({
+          useCases: [ref],
+          junit: junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }),
+        })).json<CheckAnswer>();
+        expect(ok).toBe(false);
+        expect(problems[0]).toContain(`${ref} isn't approved`);
+      });
+
+      it('UC-17/S4 a scenario with no tagged test fails, and a skipped test does not count', async () => {
+        const { ref } = await approved();
+        const { ok, problems } = (await check({
+          useCases: [ref],
+          junit: junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'skip' }),
+        })).json<CheckAnswer>();
+        expect(ok).toBe(false);
+        expect(problems).toEqual([`${ref}/S2 has no tagged test.`]);
+      });
+
+      it('UC-17/S5 a test tagged only in another repository counts, and says so', async () => {
+        const { ref } = await approved();
+        await report(junit({ [`${ref}/S2 b`]: 'pass' }), { remote: REMOTE_C });
+        const answer = (await check({
+          useCases: [ref],
+          junit: junit({ [`${ref}/S1 a`]: 'pass' }),
+        })).json<CheckAnswer>();
+        expect(answer.ok).toBe(true);
+        expect(answer.notes).toEqual([`${ref}/S2 is proven in another repository.`]);
+      });
+
+      it('UC-17/S6 all scenarios tested passes, and the check stores nothing', async () => {
+        const { ref } = await approved();
+        const answer = (await check({
+          useCases: [ref],
+          junit: junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }),
+        })).json<CheckAnswer>();
+        expect(answer).toEqual({ ok: true, problems: [], notes: [] });
+        expect(await get(ref)).toContain(`${ref}/S1: no evidence`);
+        expect(await eventsOf(ref)).toEqual([]);
+      });
+
+      it('UC-17/S7 an unknown ID fails, and only a CI token can run it', async () => {
+        const { problems } = (await check({ useCases: ['UC-999999'] })).json<CheckAnswer>();
+        expect(problems).toEqual(["UC-999999 wasn't found in this project."]);
+        expect((await check({}, agentA.token)).statusCode).toBe(403);
+      });
+    });
+  });
+
+  describe('the catalogue and a use case', () => {
+    let ci: { token: string };
+    const page = async (cookie = memberA) =>
+      (await http({ cookie }, 'GET', '/api/t/acme/catalogue')).json<Catalogue>().items;
+    const detail = async (id: string, cookie = memberA) =>
+      (await http({ cookie }, 'GET', `/api/t/acme/usecases/${id}`)).json<UseCaseDetail>();
+    const decide = (id: string, action: string, body?: object) =>
+      http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/${action}`, body);
+    const pass = (ref: string, names: string[]) =>
+      http({ token: ci.token }, 'POST', '/api/v1/reports', {
+        remote: REMOTE_A,
+        branch: 'main',
+        suite: 'catalogue',
+        commit: 'cafe1234',
+        junit: `<testsuite>${names.map((n) => `<testcase name="${ref}/${n} x"/>`).join('')}</testsuite>`,
+      });
+
+    beforeAll(async () => {
+      ci = (await http({ cookie: adminA }, 'POST', '/api/t/acme/actors', { name: 'CI 2', kind: 'ci' }))
+        .json<{ token: string }>();
+    });
+
+    it('UC-18/S1 every use case shows with status, health and how it was approved', async () => {
+      const waiting = await propose();
+      const decided = await propose();
+      const { id } = await inboxItem(decided);
+      await decide(id, 'approve');
+      const items = await page();
+      expect(items.find((i) => i.ref === waiting)).toMatchObject({
+        status: 'proposed',
+        health: 'no_evidence',
+        approval: null,
+        pending: true,
+      });
+      expect(items.find((i) => i.ref === decided)).toMatchObject({
+        status: 'approved',
+        approval: 'human',
+        pending: false,
+      });
+    });
+
+    it('UC-18/S2 another team reads as not found, in the list and by ID', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      const bravo = (await http({ cookie: memberB }, 'GET', '/api/t/bravo/catalogue')).json<Catalogue>();
+      expect(bravo.items.some((i) => i.id === id)).toBe(false);
+      expect((await http({ cookie: memberB }, 'GET', '/api/t/acme/catalogue')).statusCode).toBe(404);
+      const response = await http({ cookie: memberB }, 'GET', `/api/t/bravo/usecases/${id}`);
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('UC-18/S3 a use case shows scenarios with evidence, revisions and history', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(id, 'approve');
+      await pass(ref, ['S1']);
+      const useCase = await detail(id);
+      expect(useCase).toMatchObject({ ref, status: 'approved', health: 'no_evidence', revision: 1 });
+      expect(useCase.scenarios[0]).toMatchObject({
+        number: 1,
+        name: 'Change it',
+        health: 'passing',
+        tests: [{ suite: 'catalogue', repository: 'github.com/acme/shop', commit: 'cafe1234' }],
+      });
+      expect(useCase.scenarios[1]).toMatchObject({ number: 2, health: 'no_evidence', tests: [] });
+      expect(useCase.revisions[0]).toMatchObject({
+        number: 1,
+        state: 'approved',
+        proposedBy: 'Agent A',
+        approval: 'human',
+        decidedBy: 'Mia',
+      });
+      expect(useCase.history).toMatchObject([{ scenario: 1, health: 'passing', commit: 'cafe1234' }]);
+    });
+
+    it('UC-18/S4 a done use case with a newer revision shows both', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(id, 'approve');
+      await call(agentA.token, 'claim_done', {
+        remote: REMOTE_A,
+        id: ref,
+        pr_url: 'https://github.com/acme/shop/pull/8',
+        merge_sha: 'cafe1234',
+      });
+      await pass(ref, ['S1', 'S2']);
+      await call(agentA.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'Reworded.',
+        gherkin: GHERKIN.replace('Change it', 'Change the colour now'),
+      });
+      const useCase = await detail(id);
+      expect(useCase).toMatchObject({ status: 'done', health: 'passing', revision: 1 });
+      expect(useCase.newer).toMatchObject({ revision: 2, state: 'proposed' });
+      expect(useCase.revisions.map((r) => r.state)).toEqual(['proposed', 'live']);
+      expect(useCase.revisions[1]?.prUrl).toBe('https://github.com/acme/shop/pull/8');
+      expect((await page()).find((i) => i.id === id)).toMatchObject({ pending: true, status: 'done' });
+    });
+
+    it('UC-19/S1 a person checks a scenario by hand: it counts, and it is labelled', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(id, 'approve');
+      const verified = await decide(`${id}/scenarios/1`, 'verify', { note: 'Looked at it in the browser.' });
+      expect(verified.statusCode).toBe(201);
+      const useCase = await detail(id);
+      expect(useCase.scenarios[0]).toMatchObject({
+        health: 'passing',
+        tests: [],
+        manual: [{ by: 'Mia', note: 'Looked at it in the browser.' }],
+      });
+      const read = await call(agentA.token, 'get_usecase', { remote: REMOTE_A, id: ref });
+      expect(read.text).toContain('verified by hand by Mia');
+    });
+
+    it('UC-19/S2 a check needs a note, and a token can not make one', async () => {
+      const { id } = await inboxItem(await propose());
+      expect((await decide(`${id}/scenarios/1`, 'verify', {})).statusCode).toBe(400);
+      const asAgent = await http(
+        { token: agentA.token },
+        'POST',
+        `/api/t/acme/usecases/${id}/scenarios/1/verify`,
+        { note: 'Trust me.' },
+      );
+      expect(asAgent.statusCode).toBe(403);
+      expect((await decide(`${id}/scenarios/99`, 'verify', { note: 'x' })).statusCode).toBe(404);
+    });
+
+    it('UC-19/S3 a claimed use case can go live on hand checks', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(id, 'approve');
+      await call(agentA.token, 'claim_done', {
+        remote: REMOTE_A,
+        id: ref,
+        pr_url: 'https://github.com/acme/shop/pull/9',
+        merge_sha: 'cafe1234',
+      });
+      await decide(`${id}/scenarios/1`, 'verify', { note: 'One.' });
+      expect((await detail(id)).status).toBe('approved');
+      await decide(`${id}/scenarios/2`, 'verify', { note: 'Two.' });
+      expect((await detail(id)).status).toBe('done');
+    });
+
+    it('UC-19/S4 a changed meaning gets a new number, which has no hand check', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(`${id}/scenarios/1`, 'verify', { note: 'Checked S1.' });
+      await decide(id, 'request-changes', { changes: 'Different meaning.' });
+      await call(agentA.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'S1 means something else now.',
+        gherkin: 'Feature: F\n\n  Scenario: Something else\n    When a\n    Then b\n',
+      });
+      const useCase = await detail(id);
+      expect(useCase.scenarios).toMatchObject([{ number: 3, health: 'no_evidence', manual: [] }]);
+    });
+
+    it('UC-19/S5 list_without_evidence names what nothing proves', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(id, 'approve');
+      await pass(ref, ['S1']);
+      const { text } = await call(agentA.token, 'list_without_evidence', { remote: REMOTE_A });
+      expect(text).toContain(`${ref}/S2: Change the colour`);
+      expect(text).not.toContain(`${ref}/S1:`);
+    });
+
+    it('UC-20/S1 an export holds everything a team has, and never a token or password', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(id, 'comments', { scenario: 1, body: 'Fine.' });
+      await decide(id, 'approve');
+      const response = await http({ cookie: adminA }, 'GET', '/api/t/acme/export');
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-disposition']).toContain('openusecase-acme.json');
+      const data = response.json<TeamExport>();
+      const useCase = must(
+        must(data.projects.find((p) => p.slug === 'shop')).useCases.find((u) => `UC-${String(u.number)}` === ref),
+      );
+      expect(useCase.revisions[0]).toMatchObject({ state: 'approved', approvalMethod: 'human' });
+      expect(useCase.comments[0]).toMatchObject({ scenario: 1, body: 'Fine.' });
+      expect(response.body).not.toContain(agentA.token);
+      expect(response.body).not.toMatch(/token_hash|password|scrypt/);
+      expect((await http({ cookie: memberA }, 'GET', '/api/t/acme/export')).statusCode).toBe(403);
+    });
+
+    it('UC-20/S2 importing into an empty team brings it back, IDs and records intact', async () => {
+      const ref = await propose();
+      const { id } = await inboxItem(ref);
+      await decide(id, 'approve');
+      const data = (await http({ cookie: adminA }, 'GET', '/api/t/acme/export')).json<TeamExport>();
+      const before = must(data.projects.find((p) => p.slug === 'shop'));
+
+      const root = await signIn('root@server.test', 'root-password');
+      const { slug } = (await http({ cookie: root }, 'POST', '/api/admin/teams', { name: 'Restored' }))
+        .json<{ slug: string }>();
+      const imported = await http({ cookie: root }, 'POST', `/api/t/${slug}/import`, data);
+      expect(imported.statusCode, imported.body).toBe(201);
+
+      const again = (await http({ cookie: root }, 'GET', `/api/t/${slug}/catalogue`)).json<Catalogue>();
+      const restored = must(again.items.find((i) => i.ref === ref && i.project.slug === 'shop'));
+      expect(restored).toMatchObject({ status: 'approved', approval: 'human' });
+      const after = (await http({ cookie: root }, 'GET', `/api/t/${slug}/export`)).json<TeamExport>();
+      expect(must(after.projects.find((p) => p.slug === 'shop')).nextUseCaseNumber).toBe(before.nextUseCaseNumber);
+
+      const twice = await http({ cookie: root }, 'POST', `/api/t/${slug}/import`, data);
+      expect(twice.statusCode).toBe(409);
+      expect((await http({ cookie: root }, 'POST', `/api/t/${slug}/import`, { nope: 1 })).statusCode).toBe(400);
     });
   });
 });

@@ -135,7 +135,7 @@ export function registerSettingsRoutes(app: FastifyInstance, pool: Pool): void {
        RETURNING id, (xmax = 0) AS created`,
       [email, body.name, await hashPassword(password)],
     );
-    const account = rows[0] as { id: string; created: boolean };
+    const account = rows[0];
     await withScope(pool, { teamId }, (db) =>
       db.query(
         `INSERT INTO memberships (team_id, account_id, role) VALUES ($1, $2, $3)

@@ -19,8 +19,9 @@ export function registerIdempotency(app: FastifyInstance): void {
   const entries = new Map<string, Entry | 'running'>();
   const keyOf = (request: FastifyRequest) => {
     const header = request.headers['idempotency-key'];
-    if (!CHANGES.has(request.method) || typeof header !== 'string' || !request.account) return null;
-    return `${request.account.id}|${request.method}|${request.url}|${header.slice(0, 100)}`;
+    const who = request.account?.id ?? request.tokenActor?.id;
+    if (!CHANGES.has(request.method) || typeof header !== 'string' || !who) return null;
+    return `${who}|${request.method}|${request.url}|${header.slice(0, 100)}`;
   };
 
   // After the auth hook, so the account is known.

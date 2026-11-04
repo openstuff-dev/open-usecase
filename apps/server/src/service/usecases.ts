@@ -1,4 +1,4 @@
-import type { Inbox, InboxItem, UseCaseStatus } from '@open-usecase/contracts';
+import type { Health, Inbox, InboxItem, UseCaseStatus } from '@open-usecase/contracts';
 import type { Actor } from '../auth.js';
 import type { Client } from '../db.js';
 import { assignScenarioTags, GherkinError, splitForReview } from '../domain/gherkin.js';
@@ -72,6 +72,9 @@ const REVISION_JOINS = `
   ) live ON true`;
 
 /** The status: worked out, so there's one source of truth. Needs REVISION_JOINS. */
+/** The health of the revision in force. Needs REVISION_JOINS. */
+const HEALTH = `use_case_health(u.id, coalesce(live.scenario_numbers, latest.scenario_numbers))`;
+
 const STATUS = `CASE WHEN u.retired_at IS NOT NULL THEN 'retired'
                      WHEN live.id IS NOT NULL THEN 'done'
                      ELSE latest.state END`;
@@ -488,6 +491,14 @@ export interface ReadUseCase {
   retireReason: string | null;
   retirementRequested: boolean;
   comments: UseCaseComment[];
+  health: Health;
+  /** Per scenario of the revision in force: its health, and what that rests on. */
+  evidence: {
+    number: number;
+    health: Health;
+    tests: { suite: string; repository: string; result: string; names: string[]; commit: string }[];
+    manual: { by: string; at: string; note: string }[];
+  }[];
 }
 
 /** One use case as an agent reads it, in one query. Another team's simply isn't there. */
@@ -505,6 +516,24 @@ export async function readUseCase(
                  THEN json_build_object('revision', live.number, 'gherkin', live.gherkin) END AS live,
             u.retire_reason AS "retireReason",
             u.retirement_requested_at IS NOT NULL AS "retirementRequested",
+            use_case_health(u.id, coalesce(live.scenario_numbers, latest.scenario_numbers)) AS health,
+            coalesce((
+              SELECT json_agg(json_build_object(
+                       'number', n, 'health', scenario_health(u.id, n),
+                       'tests', coalesce((
+                         SELECT json_agg(json_build_object(
+                                  'suite', sr.suite, 'repository', rr.remote_key, 'result', sr.result,
+                                  'names', sr.tests, 'commit', sr.commit_sha))
+                           FROM scenario_results sr JOIN repositories rr ON rr.id = sr.repository_id
+                          WHERE sr.use_case_id = u.id AND sr.scenario_number = n), '[]'),
+                       'manual', coalesce((
+                         SELECT json_agg(json_build_object(
+                                  'by', ma.name, 'at', mv.verified_at, 'note', mv.note))
+                           FROM manual_verifications mv JOIN actors ma ON ma.id = mv.verified_by
+                          WHERE mv.use_case_id = u.id AND mv.scenario_number = n), '[]')
+                     ) ORDER BY n)
+                FROM unnest(coalesce(live.scenario_numbers, latest.scenario_numbers)) n
+            ), '[]') AS evidence,
             coalesce((
               SELECT json_agg(json_build_object(
                        'scenario', c.scenario_number, 'revision', cr.number,
@@ -530,6 +559,7 @@ export interface FoundUseCase {
   ref: string;
   title: string;
   status: UseCaseStatus;
+  health: Health;
   project: string;
 }
 
@@ -540,22 +570,49 @@ const toSearchQuery = (words: string): string =>
 /** Finds this team's use cases by the words in their title and latest text. */
 export async function searchUseCases(
   db: Client,
-  input: { query: string; status?: UseCaseStatus | undefined },
+  input: {
+    query: string;
+    status?: UseCaseStatus | undefined;
+    health?: Health | undefined;
+    /** `none`: no person or reviewer checked it. */
+    approval?: 'human' | 'agent_review' | 'auto_approve' | undefined;
+  },
 ): Promise<FoundUseCase[]> {
   const query = toSearchQuery(input.query);
   if (!query) throw new HttpError(400, 'Search for at least one word.');
   const { rows } = await db.query<Omit<FoundUseCase, 'ref'> & { number: number }>(
-    `SELECT u.number, u.title, ${STATUS} AS status, p.name AS project
+    `SELECT u.number, u.title, ${STATUS} AS status, ${HEALTH} AS health, p.name AS project
        FROM use_cases u
        JOIN projects p ON p.id = u.project_id
        ${REVISION_JOINS}
       WHERE to_tsvector('simple', u.title || ' ' || latest.gherkin) @@ to_tsquery('simple', $1)
         AND ($2::text IS NULL OR ${STATUS} = $2)
+        AND ($3::text IS NULL OR ${HEALTH} = $3)
+        AND ($4::text IS NULL OR coalesce(live.approval_method, latest.approval_method) = $4)
       ORDER BY p.name, u.number
       LIMIT 50`,
-    [query, input.status ?? null],
+    [query, input.status ?? null, input.health ?? null, input.approval ?? null],
   );
   return rows.map(({ number, ...row }) => ({ ...row, ref: refOf(number) }));
+}
+
+/** Scenarios of approved or done use cases that nothing proves, in the remote's project. */
+export async function listWithoutEvidence(
+  db: Client,
+  remote: string,
+): Promise<{ id: string; title: string }[]> {
+  const { rows } = await db.query<{ number: number; scenario: number; title: string }>(
+    `SELECT u.number, n AS scenario, u.title
+       FROM repositories rp JOIN use_cases u ON u.project_id = rp.project_id
+       ${REVISION_JOINS}
+       CROSS JOIN LATERAL unnest(coalesce(live.scenario_numbers, latest.scenario_numbers)) n
+      WHERE rp.remote_key = $1 AND u.retired_at IS NULL
+        AND ${STATUS} IN ('approved', 'done')
+        AND scenario_health(u.id, n) = 'no_evidence'
+      ORDER BY u.number, n`,
+    [tryParseRemote(remote)?.key ?? ''],
+  );
+  return rows.map((r) => ({ id: `${refOf(r.number)}/S${String(r.scenario)}`, title: r.title }));
 }
 
 /** Everything waiting for a person in this team, oldest first, in one query. */

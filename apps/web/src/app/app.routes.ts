@@ -30,6 +30,16 @@ export const routes: Routes = [
             title: 'Inbox · OpenUsecase',
           },
           {
+            path: 'catalogue',
+            loadComponent: () => import('./pages/catalogue').then((m) => m.CataloguePage),
+            title: 'Catalogue · OpenUsecase',
+          },
+          {
+            path: 'usecases/:id',
+            loadComponent: () => import('./pages/use-case').then((m) => m.UseCasePage),
+            title: 'Use case · OpenUsecase',
+          },
+          {
             path: 'settings',
             loadComponent: () => import('./pages/settings').then((m) => m.SettingsPage),
             title: 'Settings · OpenUsecase',

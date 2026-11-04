@@ -1,11 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { UseCaseStatus } from '@open-usecase/contracts';
+import type { Health, UseCaseStatus } from '@open-usecase/contracts';
 import { z } from 'zod';
 import type { Actor } from './auth.js';
 import { withScope, type Client, type Pool } from './db.js';
 import { HttpError } from './errors.js';
+import { claimDone } from './service/reports.js';
 import {
   commentByRef,
+  listWithoutEvidence,
   proposeUseCase,
   readUseCase,
   requestRetirement,
@@ -29,10 +31,16 @@ While it waits:
 
 When the user comes back:
 5. Call get_usecase once. Build only if the status is approved. If changes were requested, read the comments, call revise_usecase, and end your turn again. If it was rejected, tell the user why and don't build it.
-6. Build only what the approved scenarios describe. Put the scenario's full ID in the name of each test that proves it, such as "UC-142/S2 refuses a bad colour".
+6. Build only what the approved scenarios describe. Put the scenario's full ID in the name of each test that proves it, such as "UC-142/S2 refuses a bad colour". Name the use cases in the pull request body: "Use cases: UC-142, UC-150", or "No use case: <reason>". After the merge, call claim_done.
 
 When you revise:
 - Keep a scenario's tag only if you reworded it. If its meaning changed, even by one new step, leave the tag off so it gets a new ID. An old test must not appear to prove new behaviour.
+
+When someone asks "isn't it true that...?":
+- Answer from search_usecases and get_usecase first, and always say how well the answer is backed up.
+- Covered and passing: "Yes, UC-142/S2, tests passing."
+- Covered but weak: "It's specified, but failing, or there's no evidence." You can also check the code.
+- Not covered: "There's no use case for this." You can say what the code appears to do, labelled as not confirmed, and offer to propose one. A reading of the code alone is never a confirmed yes.
 
 When you find behaviour no use case covers:
 7. Always ask the user whether to build it with the current task. If yes, propose it. If no, or nobody can answer, propose it anyway so it reaches the inbox, and carry on without building it.`;
@@ -90,10 +98,30 @@ function describeNewerRevision(useCase: ReadUseCase): string[] {
   ];
 }
 
+const HEALTH_WORDS: Record<Health, string> = {
+  passing: 'passing',
+  failing: 'failing',
+  no_evidence: 'no evidence',
+};
+
+function describeEvidence(useCase: ReadUseCase): string[] {
+  const lines = useCase.evidence.map((scenario) => {
+    const id = `${useCase.ref}/S${String(scenario.number)}`;
+    const manual = scenario.manual.length
+      ? `, verified by hand by ${scenario.manual.map((m) => m.by).join(', ')}`
+      : '';
+    const tests = scenario.tests
+      .map((t) => `${t.repository} ${t.suite} ${t.result}, ${String(t.names.length)} test(s) at ${t.commit.slice(0, 7)}`)
+      .join('; ');
+    return `- ${id}: ${HEALTH_WORDS[scenario.health]}${tests ? ` (${tests})` : ''}${manual}`;
+  });
+  return ['', 'Evidence:', ...lines];
+}
+
 const describeUseCase = (useCase: ReadUseCase) => {
   const latestComments = useCase.comments.filter((c) => c.revision === useCase.revision);
   return [
-    `${useCase.ref}: ${useCase.title}. Status: ${useCase.status}. Revision ${String(useCase.revision)}.`,
+    `${useCase.ref}: ${useCase.title}. Status: ${useCase.status}. Health: ${HEALTH_WORDS[useCase.health]}. Revision ${String(useCase.revision)}.`,
     NEXT_STEP[useCase.status](useCase.ref),
     ...describeNewerRevision(useCase),
     ...(useCase.retireReason ? [`Why it was retired: ${useCase.retireReason}`] : []),
@@ -105,6 +133,7 @@ const describeUseCase = (useCase: ReadUseCase) => {
     ...(useCase.comments.length
       ? ['', 'Comments:', ...useCase.comments.map((c) => describeComment(useCase.ref, c))]
       : []),
+    ...describeEvidence(useCase),
     '',
     useCase.gherkin,
     ...(useCase.live
@@ -260,6 +289,47 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
   );
 
   server.registerTool(
+    'claim_done',
+    {
+      description:
+        "Say you merged an approved use case. It goes live when the default branch's next test report shows every scenario passing or verified by hand.",
+      inputSchema: {
+        remote,
+        id: ref,
+        pr_url: z.url().max(500),
+        merge_sha: z.string().min(7).max(100).describe('The merge commit'),
+      },
+    },
+    (input) =>
+      run(async (db) => {
+        await claimDone(db, {
+          remote: input.remote,
+          ref: input.id,
+          prUrl: input.pr_url,
+          mergeSha: input.merge_sha,
+        });
+        return answer(
+          `Claimed. ${input.id} goes live when the next default-branch report shows every scenario passing.`,
+        );
+      }),
+  );
+
+  server.registerTool(
+    'list_without_evidence',
+    {
+      description:
+        'Scenarios of approved or done use cases with no evidence, for "write tests from the use cases".',
+      inputSchema: { remote },
+    },
+    (input) =>
+      run(async (db) => {
+        const missing = await listWithoutEvidence(db, input.remote);
+        if (!missing.length) return answer('Every scenario has evidence.');
+        return answer(missing.map((m) => `- ${m.id}: ${m.title}`).join('\n'));
+      }),
+  );
+
+  server.registerTool(
     'get_usecase',
     {
       description:
@@ -282,6 +352,11 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
         status: z
           .enum(['proposed', 'changes_requested', 'approved', 'rejected', 'done', 'retired'])
           .optional(),
+        health: z.enum(['passing', 'failing', 'no_evidence']).optional(),
+        approval: z
+          .enum(['human', 'agent_review', 'auto_approve'])
+          .optional()
+          .describe('How it was approved. auto_approve means no person or reviewer checked it'),
       },
     },
     (input) =>
@@ -290,7 +365,10 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
         if (!found.length) return answer('No use cases match.');
         return answer(
           found
-            .map((u) => `- ${u.ref} (${u.project}): ${u.title}. Status: ${u.status}.`)
+            .map(
+              (u) =>
+                `- ${u.ref} (${u.project}): ${u.title}. Status: ${u.status}. Health: ${HEALTH_WORDS[u.health]}.`,
+            )
             .join('\n'),
         );
       }),

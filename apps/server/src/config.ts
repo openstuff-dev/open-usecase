@@ -14,6 +14,8 @@ export interface Config {
   sessionDays: number;
   /** Behind a reverse proxy: true, or the proxy's addresses. */
   trustProxy: boolean | string;
+  /** The largest test report CI may upload. */
+  reportMaxBytes: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -29,5 +31,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     adminPassword: env.OPENUSECASE_ADMIN_PASSWORD || undefined,
     sessionDays: Number(env.OPENUSECASE_SESSION_DAYS ?? 30),
     trustProxy: trust === 'true' ? true : trust || false,
+    reportMaxBytes: Number(env.OPENUSECASE_REPORT_MAX_BYTES ?? 20 * 1024 * 1024),
   };
 }

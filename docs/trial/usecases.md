@@ -501,3 +501,255 @@ Feature: Agent review modes
     Then I am refused with a 403
 ```
 
+### UC-15: CI reports what the tests prove
+
+Status: proposed, built
+
+```gherkin
+Feature: CI reports what the tests prove
+
+  @S1
+  Scenario: A report makes scenarios pass
+    Given tests carry scenario IDs in their names
+    When CI uploads their JUnit report from the default branch
+    Then those scenarios read "passing"
+    And the file isn't kept
+
+  @S2
+  Scenario: A repeat report adds no history
+    Given CI uploaded a report
+    When it uploads the same results again
+    Then no new history appears
+
+  @S3
+  Scenario: A deleted or skipped test proves nothing
+    Given a scenario had a passing test
+    When the next report no longer has it, or it was skipped
+    Then the scenario reads "no evidence"
+
+  @S4
+  Scenario: One failing repository makes it fail
+    Given a scenario has tests in two repositories
+    When one of them fails
+    Then the scenario reads "failing"
+
+  @S5
+  Scenario: Suites stay apart
+    Given unit and e2e reports come from separate jobs
+    When each uploads
+    Then neither overwrites the other
+
+  @S6
+  Scenario: Other branches don't count
+    Given a report comes from a branch other than the default
+    When CI uploads it
+    Then it is refused with a clear message
+
+  @S7
+  Scenario: Stale IDs don't fail the upload
+    Given a test names an unknown or retired ID
+    When CI uploads the report
+    Then it is accepted, and the answer lists the ID
+
+  @S8
+  Scenario: Only CI uploads
+    Given I have an agent's token, or no token
+    When I try to upload a report
+    Then I am refused
+    And a CI token can't do anything else
+
+  @S9
+  Scenario: Large reports stay fast
+    Given a report has hundreds of tests
+    When CI uploads it
+    Then it takes the same few database round trips
+```
+
+### UC-16: A use case goes live
+
+Status: proposed, built
+
+```gherkin
+Feature: A use case goes live
+
+  @S1
+  Scenario: Claimed and proven
+    Given an agent merged an approved use case and claimed it done
+    When the next report shows every scenario passing
+    Then it reads "done" and "passing"
+
+  @S2
+  Scenario: A regression
+    Given a use case is done
+    When its test fails
+    Then it reads "done" and "failing"
+
+  @S3
+  Scenario: Tests alone aren't enough
+    Given an approved use case with passing tests
+    When nobody claimed it
+    Then it stays approved
+
+  @S4
+  Scenario: A new revision needs its own claim and all its scenarios
+    Given a done use case has a newer approved revision
+    When reports show only the old scenarios passing
+    Then the old revision stays live until the new one is claimed and fully proven
+
+  @S5
+  Scenario: Only approved work can be claimed
+    Given a use case isn't approved
+    When an agent claims it done
+    Then it is refused
+
+  @S6
+  Scenario: Filtering by health and approval
+    Given use cases with different health and approval records
+    When an agent searches with those filters
+    Then it gets only the matching ones
+```
+
+### UC-17: The PR check
+
+Status: proposed, built
+
+```gherkin
+Feature: The PR check
+
+  @S1
+  Scenario: Nothing named
+    Given a PR body names no use cases and gives no reason
+    When the check runs
+    Then it fails and says what to write
+
+  @S2
+  Scenario: A visible exemption
+    Given a PR body says "No use case" and why
+    When the check runs
+    Then it passes and shows the reason
+
+  @S3
+  Scenario: An unapproved use case
+    Given a PR names a use case that isn't approved
+    When the check runs
+    Then it fails
+
+  @S4
+  Scenario: A scenario with no test
+    Given a PR names an approved use case
+    And one of its scenarios has no tagged test that ran
+    When the check runs
+    Then it fails and names the scenario
+
+  @S5
+  Scenario: Proven in another repository
+    Given a scenario's test only lives in another repository of the project
+    When the check runs
+    Then it counts, and the answer says so
+
+  @S6
+  Scenario: Everything proven
+    Given every scenario of an approved use case has a tagged test
+    When the check runs
+    Then it passes, and stores nothing
+
+  @S7
+  Scenario: Unknown use cases and tokens
+    Given a PR names a use case that doesn't exist, or the token isn't CI's
+    When the check runs
+    Then it fails or is refused
+```
+
+### UC-18: The catalogue
+
+Status: proposed, built
+
+```gherkin
+Feature: The catalogue
+
+  @S1
+  Scenario: See everything the product does
+    Given a team has use cases
+    When I open the catalogue
+    Then I see each with its status, its health and how it was approved
+    And I can filter, including by "no human has checked this"
+
+  @S2
+  Scenario: Teams stay apart
+    Given another team has use cases
+    When I open my catalogue, or ask for one of theirs directly
+    Then I don't see them
+
+  @S3
+  Scenario: One use case in full
+    Given a use case has tests and an approval
+    When I open it
+    Then I see its scenarios with their evidence, its revisions and its history
+
+  @S4
+  Scenario: A newer revision on the way
+    Given a done use case has a newer revision
+    When I open it
+    Then I see the live text, and that a newer revision is waiting
+```
+
+### UC-19: Checking by hand
+
+Status: proposed, built
+
+```gherkin
+Feature: Checking by hand
+
+  @S1
+  Scenario: A person checks a scenario
+    Given a scenario can't reasonably be automated
+    When I say I checked it, and what I did
+    Then it counts as evidence
+    And it is always labelled as manual
+
+  @S2
+  Scenario: Only people, and with a note
+    Given I try to record a check without a note, or with an agent's token
+    Then I am refused
+
+  @S3
+  Scenario: Going live on hand checks
+    Given a use case is claimed done
+    When every scenario is passing or checked by hand
+    Then it goes live
+
+  @S4
+  Scenario: A new meaning starts over
+    Given a scenario was checked by hand
+    When its meaning changes, so it gets a new number
+    Then the new scenario has no check
+
+  @S5
+  Scenario: Finding what nothing proves
+    Given some scenarios have no evidence
+    When an agent asks which
+    Then it gets them by ID, to write tests from
+```
+
+### UC-20: A team takes its data with it
+
+Status: proposed, built
+
+```gherkin
+Feature: A team takes its data with it
+
+  @S1
+  Scenario: Export
+    Given I am an admin of a team
+    When I export it
+    Then I get one file with its projects, use cases, revisions, comments and history
+    And it never holds a token or a password
+
+  @S2
+  Scenario: Import
+    Given I have an export and an empty team
+    When I import it
+    Then the use cases are back with their IDs and approval records
+    And importing into a team that has projects is refused
+```
+

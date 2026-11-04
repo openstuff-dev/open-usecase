@@ -48,6 +48,9 @@ export type GherkinBlock =
   { kind: 'comment'; text: string } |
   { kind: 'text'; text: string };
 
+/** What the tests say. A regression reads `done · failing` and doesn't change the status. */
+export type Health = 'passing' | 'failing' | 'no_evidence';
+
 export interface Scenario {
   /** `2` in `UC-142/S2`. */
   number: number;
@@ -157,4 +160,122 @@ export interface NewMemberResult {
   accountId: string;
   /** Set when a new account was made: shown once, for the admin to pass on. */
   password: string | null;
+}
+
+export type ApprovalMethod = 'human' | 'agent_review' | 'auto_approve';
+
+/** One line in the catalogue. */
+export interface CatalogueItem {
+  id: string;
+  ref: string;
+  title: string;
+  project: { slug: string; name: string };
+  status: UseCaseStatus;
+  health: Health;
+  /** How the revision in force was approved. Null if it hasn't been. */
+  approval: ApprovalMethod | null;
+  revision: number;
+  /** A newer revision waits, or a retirement does. */
+  pending: boolean;
+}
+
+export interface Catalogue {
+  items: CatalogueItem[];
+}
+
+export interface ScenarioEvidence {
+  number: number;
+  name: string;
+  blocks: GherkinBlock[];
+  health: Health;
+  tests: { suite: string; repository: string; result: string; names: string[]; commit: string; at: string }[];
+  manual: { by: string; at: string; note: string }[];
+}
+
+export interface RevisionSummary {
+  number: number;
+  state: string;
+  proposedBy: string;
+  proposedAt: string;
+  whatChanged: string | null;
+  approval: ApprovalMethod | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  prUrl: string | null;
+  mergeSha: string | null;
+  claimedDoneAt: string | null;
+}
+
+/** One use case with everything known about it. */
+export interface UseCaseDetail {
+  id: string;
+  ref: string;
+  title: string;
+  project: { slug: string; name: string };
+  status: UseCaseStatus;
+  health: Health;
+  originalRequest: string | null;
+  retiredAt: string | null;
+  retiredBy: string | null;
+  retireReason: string | null;
+  retirement: RetirementRequest | null;
+  /** The revision in force: the live one, or else the latest. */
+  revision: number;
+  preamble: GherkinBlock[];
+  scenarios: ScenarioEvidence[];
+  /** A newer revision than the one in force, with its text. */
+  newer: { revision: number; state: string; preamble: GherkinBlock[]; scenarios: Scenario[] } | null;
+  revisions: RevisionSummary[];
+  comments: Comment[];
+  /** Only when a scenario's health changed. */
+  history: { scenario: number; health: Health; commit: string | null; at: string }[];
+}
+
+/** What a team takes with it. Never tokens or passwords. */
+export interface TeamExport {
+  version: 1;
+  exportedAt: string;
+  team: { slug: string; name: string };
+  actors: { id: string; kind: string; name: string; review: ReviewMode; canReview: boolean }[];
+  projects: {
+    slug: string;
+    name: string;
+    language: string;
+    nextUseCaseNumber: number;
+    repositories: { remote: string; defaultBranch: string }[];
+    useCases: {
+      number: number;
+      title: string;
+      nextScenarioNumber: number;
+      scenarios: number[];
+      retiredAt: string | null;
+      retiredBy: string | null;
+      retireReason: string | null;
+      revisions: {
+        number: number;
+        gherkin: string;
+        originalRequest: string | null;
+        whatChanged: string | null;
+        state: string;
+        reviewMode: ReviewMode;
+        proposedBy: string;
+        decidedBy: string | null;
+        decidedAt: string | null;
+        approvalMethod: ApprovalMethod | null;
+        prUrl: string | null;
+        mergeSha: string | null;
+        claimedDoneAt: string | null;
+        createdAt: string;
+      }[];
+      comments: {
+        revision: number;
+        scenario: number | null;
+        body: string;
+        author: string;
+        createdAt: string;
+      }[];
+      manual: { scenario: number; by: string; at: string; note: string }[];
+      history: { scenario: number; health: Health; commit: string | null; at: string }[];
+    }[];
+  }[];
 }

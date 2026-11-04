@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseCatalogueFile } from '../src/domain/catalogue-file.js';
+import { JUnitError, readJUnit } from '../src/domain/junit.js';
 import {
   assignScenarioTags,
   GherkinError,
@@ -162,5 +163,35 @@ describe('the catalogue file', () => {
       { number: 9, title: 'Later', approved: false },
     ]);
     expect(useCases[0]?.gherkin).toContain('@S1');
+  });
+});
+
+describe('reading JUnit', () => {
+  it('UC-15/S1 finds IDs in a test name or class, once per ID, with the result', () => {
+    const tests = readJUnit(`<testsuites><testsuite name="a">
+      <testcase name="UC-1/S2 works, see also UC-1/S2 and UC-3/S1"/>
+      <testcase classname="UC-4/S1 suite" name="fails"><failure/></testcase>
+      <testcase name="UC-5/S1 ignored"><skipped/></testcase>
+      <testcase name="no id"/>
+      <testsuite name="nested"><testcase name="UC-6/S9 errors"><error/></testcase></testsuite>
+    </testsuite></testsuites>`);
+    expect(tests.map((t) => [t.useCase, t.scenario, t.result])).toEqual([
+      [1, 2, 'passed'],
+      [3, 1, 'passed'],
+      [4, 1, 'failed'],
+      [5, 1, 'skipped'],
+      [6, 9, 'failed'],
+    ]);
+  });
+
+  it('UC-15/S1 reads a file with one testsuite and no wrapper', () => {
+    expect(readJUnit('<testsuite><testcase name="UC-1/S1 a"/></testsuite>')).toHaveLength(1);
+  });
+
+  it('UC-15/S8 refuses what is not JUnit, and does not expand entities', () => {
+    expect(() => readJUnit('<html/>')).toThrow(JUnitError);
+    expect(() => readJUnit('not xml')).toThrow(JUnitError);
+    const bomb = '<!DOCTYPE t [<!ENTITY a "UC-1/S1">]><testsuite><testcase name="&a;"/></testsuite>';
+    expect(readJUnit(bomb)).toEqual([]);
   });
 });

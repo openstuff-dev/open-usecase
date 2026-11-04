@@ -12,6 +12,7 @@ import {
 } from '@openstuff-dev/ui-angular';
 import { Session } from './core/session';
 import {
+  iconCatalogue,
   iconCheck,
   iconChevrons,
   iconInbox,
@@ -31,6 +32,7 @@ interface NavLink {
 /** The pages in the sidebar, and who sees each. */
 const LINKS: NavLink[] = [
   { path: 'inbox', label: 'Inbox', icon: iconInbox, roles: ['admin', 'member'] },
+  { path: 'catalogue', label: 'Catalogue', icon: iconCatalogue, roles: ['admin', 'member'] },
 ];
 
 const ROLE_LABELS: Record<Role, string> = { admin: 'Admin', member: 'Member' };

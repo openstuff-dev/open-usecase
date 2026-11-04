@@ -1,0 +1,56 @@
+{
+  "name": "@openstuff-dev/usecase",
+  "version": "0.1.0",
+  "description": "The openusecase CLI: upload test reports to OpenUsecase and run its PR check in CI.",
+  "type": "module",
+  "bin": {
+    "openusecase": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "!**/*.tsbuildinfo"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openstuff-dev/open-usecase.git",
+    "directory": "packages/usecase"
+  },
+  "keywords": [
+    "use-cases",
+    "gherkin",
+    "bdd",
+    "ci",
+    "agents",
+    "openusecase"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "nx": {
+    "name": "usecase",
+    "tags": [
+      "type:package"
+    ],
+    "targets": {
+      "build": {
+        "outputs": [
+          "{projectRoot}/dist"
+        ]
+      }
+    }
+  }
+}
