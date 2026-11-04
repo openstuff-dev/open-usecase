@@ -22,8 +22,8 @@
     "@angular/platform-browser": "~22.2.3",
     "@angular/router": "~22.2.3",
     "@openstuff-dev/tokens": "^0.1.1",
-    "@openstuff-dev/ui": "^0.1.3",
-    "@openstuff-dev/ui-angular": "^0.1.3",
+    "@openstuff-dev/ui": "^0.1.4",
+    "@openstuff-dev/ui-angular": "^0.1.4",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "lucide": "^1.66.0"
