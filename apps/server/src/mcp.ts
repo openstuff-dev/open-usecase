@@ -4,9 +4,11 @@ import { z } from 'zod';
 import type { Actor } from './auth.js';
 import { withScope, type Client, type Pool } from './db.js';
 import { HttpError } from './errors.js';
+import type { GlossaryReader } from './service/glossary.js';
 import { claimDone } from './service/reports.js';
 import {
   commentByRef,
+  listAreas,
   listWithoutEvidence,
   proposeUseCase,
   readUseCase,
@@ -24,7 +26,7 @@ export const SERVER_INSTRUCTIONS = `OpenUsecase holds what a product visibly doe
 Before you build:
 1. If your task changes behaviour a user can observe, it needs an approved use case first. Refactors, dependency bumps, CI and internal tooling need none. If you're unsure, ask the user.
 2. Call search_usecases to see whether a use case already covers it. If one does, read it with get_usecase.
-3. If none does, write one and call propose_usecase. Describe behaviour, not implementation, and keep to about seven scenarios. Send the user's request word for word as original_request.
+3. If none does, write one and call propose_usecase. Describe behaviour, not implementation, and keep to about seven scenarios. Send the user's request word for word as original_request. Call list_areas and file it under the area it belongs to. If none fits, send new_area.
 
 While it waits:
 4. If it isn't approved on arrival, end your turn and tell the user it's waiting for review. Don't keep checking its status, and don't start building, not even the parts you're sure about. If it was approved on arrival, that still covers only what the user asked for: it doesn't let you widen the task.
@@ -68,6 +70,13 @@ const describeResult = (result: ProposeResult, verb: string) =>
     '',
     result.gherkin,
   ].join('\n');
+
+/** Only for teams that added OpenPurpose, which holds the glossary. */
+export const GLOSSARY_INSTRUCTIONS = `
+
+Words:
+- Call list_terms before you write a use case. Use only those terms for the things they name.
+- If no term fits, propose a new one in OpenPurpose, where a person approves it, and tell the user. Don't invent a word for it in the use case.`;
 
 const NEXT_STEP: Record<UseCaseStatus, (ref: string) => string> = {
   approved: () =>
@@ -143,10 +152,18 @@ const describeUseCase = (useCase: ReadUseCase) => {
 };
 
 /** One server per request (stateless), for one agent. It only ever sees the agent's team. */
-export function createMcpServer(pool: Pool, actor: Actor, version: string): McpServer {
+export function createMcpServer(
+  pool: Pool,
+  actor: Actor,
+  version: string,
+  glossary: GlossaryReader,
+  hasGlossary: boolean,
+): McpServer {
   const server = new McpServer(
     { name: 'openusecase', version },
-    { instructions: SERVER_INSTRUCTIONS },
+    {
+      instructions: hasGlossary ? SERVER_INSTRUCTIONS + GLOSSARY_INSTRUCTIONS : SERVER_INSTRUCTIONS,
+    },
   );
 
   /** Runs in the agent's team, and turns a refusal into text the agent can act on. */
@@ -173,6 +190,16 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
           .max(20_000)
           .optional()
           .describe("The user's request, word for word"),
+        area: z
+          .string()
+          .max(100)
+          .optional()
+          .describe('The area it belongs to, such as "Billing". Call list_areas for the names'),
+        new_area: z
+          .string()
+          .max(100)
+          .optional()
+          .describe('A new area, if none fits. A person sees it is new, and approving adds it'),
       },
     },
     (input) =>
@@ -184,6 +211,8 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
               title: input.title,
               gherkin: input.gherkin,
               originalRequest: input.original_request,
+              area: input.area,
+              newArea: input.new_area,
             }),
             'Proposed',
           ),
@@ -285,6 +314,40 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
           reason: input.reason,
         });
         return answer(`Filed. A person decides on retiring ${input.id}. Carry on with other work.`);
+      }),
+  );
+
+  server.registerTool(
+    'list_areas',
+    {
+      description: "The project's areas, its vertical slices such as Billing or Settings.",
+      inputSchema: { remote },
+    },
+    (input) =>
+      run(async (db) => {
+        const areas = await listAreas(db, input.remote);
+        return answer(areas.length ? areas.join('\n') : 'This project has no areas yet.');
+      }),
+  );
+
+  server.registerTool(
+    'list_terms',
+    {
+      description:
+        "The project's approved terms and what they mean, from OpenPurpose. Use only these terms in use cases.",
+      inputSchema: {
+        project: z.string().max(63).describe('The project slug, such as "shop"'),
+      },
+    },
+    (input) =>
+      run(async (db) => {
+        const { state, terms } = await glossary.read(db, actor.teamId, input.project);
+        if (state === 'off') return answer('This team has no glossary. Use plain words.');
+        if (state === 'unreachable') {
+          return answer("OpenPurpose can't be reached right now, so the terms aren't available.");
+        }
+        const lines = terms.map((t) => `- ${t.term}: ${t.definition}`);
+        return answer(lines.join('\n') || 'No terms yet.');
       }),
   );
 

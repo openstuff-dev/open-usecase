@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import type {
   ActorSettings,
   MemberSettings,
+  OpenPurposeLink,
   NewMemberResult,
   NewToken,
   ProjectSettings,
@@ -264,6 +265,58 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
         </form>
       </section>
 
+      <section os-panel title="OpenPurpose" [level]="2">
+        <p class="hint">
+          OpenPurpose holds your glossary. With this link, agents are told to keep to its terms, and
+          the inbox marks them. Without it, everything else works the same.
+        </p>
+        @if (link(); as link) {
+          <ul class="plain">
+            <li>
+              <span>Connected to {{ link }}</span>
+              <button os-button size="sm" variant="ghost" type="button" (click)="removeLink()">
+                Remove link
+              </button>
+            </li>
+          </ul>
+        }
+        <form class="inline new" (ngSubmit)="saveLink()">
+          <os-field label="OpenPurpose URL" hint="Such as https://purpose.example.com">
+            <input os-input type="url" name="openpurposeUrl" required [(ngModel)]="linkUrl" />
+          </os-field>
+          <os-field
+            label="Token"
+            hint="An OpenPurpose token that can read this team’s projects. It’s stored encrypted."
+          >
+            <input
+              os-input
+              type="password"
+              name="openpurposeToken"
+              autocomplete="off"
+              required
+              [(ngModel)]="linkToken"
+            />
+          </os-field>
+          <button os-button type="submit" [disabled]="!linkUrl.trim() || !linkToken.trim()">
+            {{ link() ? 'Update link' : 'Add link' }}
+          </button>
+        </form>
+      </section>
+
+      <section os-panel title="Your data" [level]="2">
+        <p class="hint">
+          One file with your projects, use cases, revisions, comments and history. It never holds a
+          token or a password. You can import it into a team that has no projects yet.
+        </p>
+        <div class="inline">
+          <a os-button [href]="base + '/export'" download>Export this team</a>
+          <label class="import">
+            Import a file
+            <input type="file" accept="application/json,.json" (change)="importFile($event)" />
+          </label>
+        </div>
+      </section>
+
       @if (session.me()?.isServerAdmin) {
         <section os-panel title="Teams on this server" [level]="2">
           <p class="hint">Only server admins see this.</p>
@@ -359,6 +412,13 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
       border-block-start: 1px var(--os-border-style) var(--os-border-default);
     }
 
+    .import {
+      display: grid;
+      gap: var(--os-space-1);
+      font-size: var(--os-text-sm);
+      font-weight: var(--os-font-weight-medium);
+    }
+
     .check {
       display: flex;
       gap: var(--os-space-2);
@@ -387,6 +447,9 @@ export class SettingsPage {
   protected memberRole: Role = 'member';
   protected actorName = '';
   protected actorKind: 'agent' | 'ci' = 'agent';
+  protected readonly link = signal<string | null>(null);
+  protected linkUrl = '';
+  protected linkToken = '';
   private readonly repositoryDrafts = signal(new Map<string, string>());
   private readonly key = new IdempotencyKey();
   private latest = 0;
@@ -399,7 +462,7 @@ export class SettingsPage {
     inject(DestroyRef).onDestroy(onReturn(() => void this.load(this.team())));
   }
 
-  private get base(): string {
+  protected get base(): string {
     return `/api/t/${this.team()}`;
   }
 
@@ -414,6 +477,11 @@ export class SettingsPage {
         }),
       );
       if (load === this.latest) this.settings.set(settings);
+      const { url } = await this.api.get<OpenPurposeLink>(`/api/t/${team}/openpurpose`);
+      if (load === this.latest) {
+        this.link.set(url);
+        this.linkUrl ||= url ?? '';
+      }
     } catch (error) {
       if (load === this.latest) this.error.set(errorText(error));
     }
@@ -431,6 +499,44 @@ export class SettingsPage {
       this.error.set(errorText(error));
       return null;
     }
+  }
+
+  protected async saveLink(): Promise<void> {
+    const done = await this.change(() =>
+      this.api.put(`${this.base}/openpurpose`, { url: this.linkUrl, token: this.linkToken }),
+    );
+    if (done) {
+      this.linkToken = '';
+      this.toaster.show('Connected to OpenPurpose.', { tone: 'success' });
+    }
+  }
+
+  protected async removeLink(): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: 'Remove the link to OpenPurpose?',
+      message: 'Terms stop being marked, and agents stop being told to keep to them. Nothing else changes.',
+      confirmLabel: 'Remove link',
+      danger: true,
+    });
+    if (!ok) return;
+    await this.change(() => this.api.delete(`${this.base}/openpurpose`));
+    this.linkUrl = '';
+  }
+
+  protected async importFile(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    input.value = '';
+    let data: unknown;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      this.error.set('That file isn’t an OpenUsecase export.');
+      return;
+    }
+    const done = await this.change(() => this.api.post(`${this.base}/import`, data, this.key.value));
+    if (done) this.toaster.show('Imported.', { tone: 'success' });
   }
 
   protected modeHint(mode: ReviewMode): string {

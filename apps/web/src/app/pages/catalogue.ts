@@ -70,6 +70,16 @@ import { HEALTH_LABELS, HEALTH_TONES, STATUS_LABELS, STATUS_TONES } from '../sha
               </select>
             </os-field>
           }
+          @if (areas().length) {
+            <os-field label="Area">
+              <select os-select name="area" [ngModel]="area()" (ngModelChange)="area.set($event)">
+                <option value="">All</option>
+                @for (entry of areas(); track entry) {
+                  <option [value]="entry">{{ entry }}</option>
+                }
+              </select>
+            </os-field>
+          }
           <os-field label="Status">
             <select
               os-select
@@ -114,8 +124,16 @@ import { HEALTH_LABELS, HEALTH_TONES, STATUS_LABELS, STATUS_TONES } from '../sha
                 <span class="ref">{{ item.ref }}</span>
                 <span class="title">
                   {{ item.title }}
-                  @if (projects().length > 1) {
-                    <small>{{ item.project.name }}</small>
+                  @if (projects().length > 1 || item.area) {
+                    <small>
+                      @if (projects().length > 1) {
+                        {{ item.project.name }}
+                      }
+                      @if (projects().length > 1 && item.area) {
+                        ·
+                      }
+                      {{ item.area }}
+                    </small>
                   }
                 </span>
                 <span class="badges">
@@ -243,6 +261,7 @@ export class CataloguePage {
   protected readonly healths = Object.keys(HEALTH_LABELS) as Health[];
   protected readonly words = signal('');
   protected readonly project = signal('');
+  protected readonly area = signal('');
   protected readonly status = signal('');
   protected readonly health = signal('');
   protected readonly unchecked = signal(false);
@@ -253,12 +272,17 @@ export class CataloguePage {
     return [...seen.values()];
   });
 
+  protected readonly areas = computed(() =>
+    [...new Set((this.items() ?? []).flatMap((i) => (i.area ? [i.area] : [])))].sort(),
+  );
+
   protected readonly shown = computed(() => {
     const words = this.words().trim().toLowerCase();
     return (this.items() ?? []).filter(
       (item) =>
         (!words || `${item.ref} ${item.title}`.toLowerCase().includes(words)) &&
         (!this.project() || item.project.slug === this.project()) &&
+        (!this.area() || item.area === this.area()) &&
         (!this.status() || item.status === this.status()) &&
         (!this.health() || item.health === this.health()) &&
         // Approved by a reviewer agent or on arrival: no person has looked at it.

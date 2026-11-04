@@ -115,10 +115,96 @@ async function useCaseByRef(
   return row ? { ...row, language: project.language } : null;
 }
 
+/**
+ * Which area a proposal goes under. Once a project has areas, a proposal has to name one or say it
+ * needs a new one, and a refusal says which exist. A new area joins when the use case is approved.
+ */
+async function resolveArea(
+  db: Client,
+  projectId: string,
+  input: { area?: string | undefined; newArea?: string | undefined },
+): Promise<{ areaId: string | null; proposedArea: string | null }> {
+  const { rows } = await db.query<{ id: string; name: string }>(
+    'SELECT id, name FROM areas WHERE project_id = $1 ORDER BY name',
+    [projectId],
+  );
+  const names = rows.map((r) => r.name).join(', ');
+  const newArea = input.newArea?.trim();
+  if (newArea) {
+    const same = rows.find((r) => r.name.toLowerCase() === newArea.toLowerCase());
+    return same ? { areaId: same.id, proposedArea: null } : { areaId: null, proposedArea: newArea };
+  }
+  const area = input.area?.trim();
+  if (!area) {
+    if (!rows.length) return { areaId: null, proposedArea: null };
+    throw new HttpError(
+      400,
+      `Name the area this belongs to: ${names}. If none fits, send new_area with a name.`,
+    );
+  }
+  const found = rows.find((r) => r.name.toLowerCase() === area.toLowerCase());
+  if (found) return { areaId: found.id, proposedArea: null };
+  throw new HttpError(
+    400,
+    rows.length
+      ? `There's no area "${area}". The areas are: ${names}. If none fits, send new_area with a name.`
+      : `There's no area "${area}" yet. To add it, send new_area instead.`,
+  );
+}
+
+/** When a use case gets approved, an area it proposed joins the project. */
+async function settleArea(db: Client, id: string): Promise<void> {
+  await db.query(
+    `WITH use_case AS (
+       SELECT team_id, project_id, proposed_area FROM use_cases
+        WHERE id = $1 AND proposed_area IS NOT NULL),
+     made AS (
+       INSERT INTO areas (team_id, project_id, name)
+       SELECT team_id, project_id, proposed_area FROM use_case
+       ON CONFLICT (project_id, name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id)
+     UPDATE use_cases SET area_id = (SELECT id FROM made), proposed_area = NULL
+      WHERE id = $1 AND EXISTS (SELECT 1 FROM made)`,
+    [id],
+  );
+}
+
+/** A person moves a use case. Its ID and approval don't change. */
+export async function moveToArea(db: Client, id: string, name: string): Promise<void> {
+  const { rowCount } = await db.query(
+    `WITH use_case AS (SELECT team_id, project_id FROM use_cases WHERE id = $1),
+     made AS (
+       INSERT INTO areas (team_id, project_id, name)
+       SELECT team_id, project_id, $2 FROM use_case
+       ON CONFLICT (project_id, name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id)
+     UPDATE use_cases SET area_id = (SELECT id FROM made), proposed_area = NULL WHERE id = $1`,
+    [id, name],
+  );
+  if (!rowCount) throw notFound('That use case');
+}
+
+/** The areas of the project a remote belongs to. */
+export async function listAreas(db: Client, remote: string): Promise<string[]> {
+  const { rows } = await db.query<{ name: string }>(
+    `SELECT a.name FROM areas a JOIN repositories r ON r.project_id = a.project_id
+      WHERE r.remote_key = $1 ORDER BY a.name`,
+    [tryParseRemote(remote)?.key ?? ''],
+  );
+  return rows.map((r) => r.name);
+}
+
 export async function proposeUseCase(
   db: Client,
   actor: Actor,
-  input: { remote: string; title: string; gherkin: string; originalRequest?: string | undefined },
+  input: {
+    remote: string;
+    title: string;
+    gherkin: string;
+    originalRequest?: string | undefined;
+    area?: string | undefined;
+    newArea?: string | undefined;
+  },
 ): Promise<ProposeResult> {
   const project = await projectOfRemote(db, input.remote);
   if (!project) {
@@ -128,6 +214,7 @@ export async function proposeUseCase(
     );
   }
   const arrives = arrival(actor, input.originalRequest, 'A proposal');
+  const filed = await resolveArea(db, project.id, input);
   // Check the text before taking a number, so a refused proposal doesn't use one up.
   const { gherkin, scenarios, nextNumber } = tagged(() =>
     assignScenarioTags(input.gherkin, project.language, new Set(), 1),
@@ -139,9 +226,10 @@ export async function proposeUseCase(
   );
   const number = rows[0]?.number ?? 0;
   const inserted = await db.query<{ id: string }>(
-    `INSERT INTO use_cases (team_id, project_id, number, title, next_scenario_number)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [actor.teamId, project.id, number, input.title, nextNumber],
+    `INSERT INTO use_cases
+       (team_id, project_id, number, title, next_scenario_number, area_id, proposed_area)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [actor.teamId, project.id, number, input.title, nextNumber, filed.areaId, filed.proposedArea],
   );
   const id = inserted.rows[0]?.id ?? '';
   await db.query(
@@ -167,6 +255,7 @@ export async function proposeUseCase(
       arrives.decidedBy,
     ],
   );
+  if (arrives.state === 'approved') await settleArea(db, id);
   return {
     id,
     ref: refOf(number),
@@ -265,6 +354,7 @@ export async function reviseUseCase(
       arrives.decidedBy,
     ],
   );
+  if (arrives.state === 'approved') await settleArea(db, useCase.id);
   const ref = refOf(useCase.number);
   return {
     id: useCase.id,
@@ -338,7 +428,10 @@ async function decide(
       WHERE use_case_id = $1 AND state = 'proposed' RETURNING id`,
     [id, state, actor.id],
   );
-  if (rows.length) return { status: await statusOf(db, id) };
+  if (rows.length) {
+    if (state === 'approved') await settleArea(db, id);
+    return { status: await statusOf(db, id) };
+  }
   const exists = await db.query('SELECT 1 FROM use_cases WHERE id = $1', [id]);
   if (!exists.rowCount) throw notFound('That use case');
   throw new HttpError(409, 'That use case isn’t waiting for review any more.');
@@ -414,6 +507,7 @@ export async function reviewUseCase(
       WHERE use_case_id = $1 AND state = 'proposed'`,
     [useCase.id, input.decision === 'approve' ? 'approved' : 'changes_requested', actor.id],
   );
+  if (input.decision === 'approve') await settleArea(db, useCase.id);
   if (input.comment?.trim()) {
     await addComment(db, actor, useCase.id, input.ref, input.comment.trim(), undefined);
   }
@@ -629,6 +723,8 @@ export async function loadInbox(db: Client): Promise<Inbox> {
             a.name AS "proposedBy", r.created_at AS "proposedAt",
             r.original_request AS "originalRequest", r.what_changed AS "whatChanged",
             r.state = 'proposed' AS "needsReview",
+            coalesce(ar.name, u.proposed_area) AS area,
+            ar.id IS NULL AND u.proposed_area IS NOT NULL AS "newArea",
             CASE WHEN u.retirement_requested_at IS NOT NULL THEN json_build_object(
               'requestedBy', ra.name, 'requestedAt', u.retirement_requested_at,
               'reason', u.retirement_request_reason) END AS retirement,
@@ -653,8 +749,10 @@ export async function loadInbox(db: Client): Promise<Inbox> {
        JOIN projects p ON p.id = u.project_id
        JOIN actors a ON a.id = r.proposed_by
        LEFT JOIN actors ra ON ra.id = u.retirement_requested_by
+       LEFT JOIN areas ar ON ar.id = u.area_id
       WHERE u.retired_at IS NULL
-      ORDER BY coalesce(u.retirement_requested_at, r.created_at)`,
+      ORDER BY coalesce(ar.name, u.proposed_area) NULLS LAST,
+               coalesce(u.retirement_requested_at, r.created_at)`,
   );
   return {
     items: rows.map(({ number, gherkin, language, ...row }) => ({

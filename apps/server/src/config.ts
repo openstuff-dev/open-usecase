@@ -16,6 +16,12 @@ export interface Config {
   trustProxy: boolean | string;
   /** The largest test report CI may upload. */
   reportMaxBytes: number;
+  /** Encrypts the OpenPurpose token. Without it, a key is made and kept in the database. */
+  secretKey: string | undefined;
+  /** `private` lets this server call internal addresses, such as an OpenPurpose on your network. */
+  fetch: 'public' | 'private';
+  /** With `private`: only these hosts. Empty means any. */
+  fetchAllow: string[];
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -32,5 +38,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionDays: Number(env.OPENUSECASE_SESSION_DAYS ?? 30),
     trustProxy: trust === 'true' ? true : trust || false,
     reportMaxBytes: Number(env.OPENUSECASE_REPORT_MAX_BYTES ?? 20 * 1024 * 1024),
+    secretKey: env.OPENUSECASE_SECRET_KEY || undefined,
+    fetch: env.OPENUSECASE_FETCH === 'private' ? 'private' : 'public',
+    fetchAllow: (env.OPENUSECASE_FETCH_ALLOW ?? '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
   };
 }

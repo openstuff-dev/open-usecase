@@ -1,3 +1,5 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -6,6 +8,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type {
   Catalogue,
+  Glossary,
   Inbox,
   InboxItem,
   TeamExport,
@@ -17,6 +20,7 @@ import { hashPassword } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { createPool, migrate, type Pool, withScope } from '../src/db.js';
 import { addMember, createAgent, createProject, createTeam } from '../src/service/setup.js';
+import { testLink } from '../src/service/glossary.js';
 import { type CheckAnswer, uploadReport } from '../src/service/reports.js';
 
 // These tests need Postgres: TEST_DATABASE_URL=postgres://user:pass@localhost:5432/openusecase_test.
@@ -122,7 +126,16 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     await owner.end();
     await migrate(url, fileURLToPath(new URL('../migrations', import.meta.url)));
     pool = createPool(url);
-    app = await buildApp({ ...loadConfig({}), databaseUrl: url, logLevel: 'silent' }, pool);
+    app = await buildApp(
+      {
+        ...loadConfig({}),
+        databaseUrl: url,
+        logLevel: 'silent',
+        secretKey: 'test-secret',
+        fetch: 'private',
+      },
+      pool,
+    );
     await app.listen({ port: 0, host: '127.0.0.1' });
     const address = must(app.addresses()[0], 'address');
     base = `http://127.0.0.1:${String(address.port)}`;
@@ -578,6 +591,8 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         'claim_done',
         'comment_on_usecase',
         'get_usecase',
+        'list_areas',
+        'list_terms',
         'list_without_evidence',
         'propose_usecase',
         'request_retirement',
@@ -1669,6 +1684,192 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const twice = await http({ cookie: root }, 'POST', `/api/t/${slug}/import`, data);
       expect(twice.statusCode).toBe(409);
       expect((await http({ cookie: root }, 'POST', `/api/t/${slug}/import`, { nope: 1 })).statusCode).toBe(400);
+    });
+  });
+
+  describe('UC-8: use cases are grouped by area', () => {
+    const REMOTE_D = 'https://github.com/acme/billing.git';
+    const GH = 'Feature: F\n\n  Scenario: A\n    When I look\n    Then I see\n';
+    const projectSlug = 'billing-app';
+    const proposeIn = (args: object) =>
+      call(agentA.token, 'propose_usecase', { remote: REMOTE_D, title: 'T', gherkin: GH, ...args });
+    const refOf = (text: string) => must(/UC-\d+/.exec(text)?.[0]);
+    const inProject = async (ref: string) =>
+      must((await inbox(memberA)).find((i) => i.ref === ref && i.project.slug === projectSlug));
+    const approve = async (ref: string) => {
+      const { id } = await inProject(ref);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
+      return id;
+    };
+
+    beforeAll(async () => {
+      await http({ cookie: adminA }, 'POST', '/api/t/acme/projects', { name: 'Billing app', remote: REMOTE_D });
+    });
+
+    it('UC-8/S3 a new area is proposed with a use case, seen as new, and added on approval', async () => {
+      const first = refOf((await proposeIn({ new_area: 'Billing' })).text);
+      expect(await inProject(first)).toMatchObject({ area: 'Billing', newArea: true });
+      expect((await call(agentA.token, 'list_areas', { remote: REMOTE_D })).text).toBe(
+        'This project has no areas yet.',
+      );
+      await approve(first);
+      expect((await call(agentA.token, 'list_areas', { remote: REMOTE_D })).text).toBe('Billing');
+    });
+
+    it('UC-8/S1 an agent files a use case under an area, and the inbox shows it', async () => {
+      const ref = refOf((await proposeIn({ area: 'billing' })).text);
+      expect(await inProject(ref)).toMatchObject({ area: 'Billing', newArea: false });
+    });
+
+    it('UC-8/S2 without an area, or with one that does not exist, it is refused and told which exist', async () => {
+      const before = await useCaseCount();
+      const missing = await proposeIn({});
+      expect(missing).toMatchObject({ isError: true });
+      expect(missing.text).toContain('Billing');
+      const wrong = await proposeIn({ area: 'Settings' });
+      expect(wrong.text).toContain('The areas are: Billing');
+      expect(await useCaseCount()).toBe(before);
+    });
+
+    it('UC-8/S4 a person moves it: the ID and approval stay, and agents are refused', async () => {
+      const ref = refOf((await proposeIn({ area: 'Billing' })).text);
+      const id = await approve(ref);
+      const moved = await http({ cookie: memberA }, 'PATCH', `/api/t/acme/usecases/${id}/area`, { area: 'Invoices' });
+      expect(moved.statusCode).toBe(200);
+      const useCase = (await http({ cookie: memberA }, 'GET', `/api/t/acme/usecases/${id}`)).json<UseCaseDetail>();
+      expect(useCase).toMatchObject({ ref, area: 'Invoices', status: 'approved' });
+      expect(useCase.areas).toEqual(['Billing', 'Invoices']);
+      const asAgent = await http({ token: agentA.token }, 'PATCH', `/api/t/acme/usecases/${id}/area`, { area: 'X' });
+      expect(asAgent.statusCode).toBe(403);
+    });
+
+    it('UC-8/S3 a rejected use case does not add its new area', async () => {
+      const ref = refOf((await proposeIn({ new_area: 'Nope' })).text);
+      const { id } = await inProject(ref);
+      await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/reject`, { reason: 'No.' });
+      expect((await call(agentA.token, 'list_areas', { remote: REMOTE_D })).text).not.toContain('Nope');
+    });
+  });
+
+  describe('UC-7: the glossary in OpenPurpose', () => {
+    let stub: Server;
+    let stubUrl: string;
+    let answer: { status: number; body: unknown };
+    let calls: { path: string; auth: string | undefined; body: string }[];
+    const admin = (method: string, path: string, payload?: object) =>
+      http({ cookie: adminA }, method, `/api/t/acme/openpurpose${path}`, payload);
+    const terms = async () =>
+      (await http({ cookie: memberA }, 'GET', '/api/t/acme/projects/shop/terms')).json<Glossary>();
+    // The shape of OpenPurpose's POST /api/context: its `blocks`, general first.
+    const CONTEXT = {
+      blocks: [
+        {
+          documents: [
+            { kind: 'glossary', sections: [{ heading: 'Member', body: 'Org: someone in a [[Team]].' }] },
+            { kind: 'guidelines', sections: [{ heading: 'Not a term', body: 'x' }] },
+          ],
+        },
+        {
+          documents: [
+            {
+              kind: 'glossary',
+              sections: [
+                { heading: 'Member', body: 'Someone who signs in to a [[Team]].' },
+                { heading: 'Team', body: 'The tenant.' },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    beforeAll(async () => {
+      answer = { status: 200, body: CONTEXT };
+      calls = [];
+      stub = createServer((request, response) => {
+        let body = '';
+        request.on('data', (chunk: Buffer) => (body += chunk.toString()));
+        request.on('end', () => {
+          calls.push({ path: request.url ?? '', auth: request.headers.authorization, body });
+          response.writeHead(answer.status, { 'content-type': 'application/json' });
+          response.end(JSON.stringify(answer.body));
+        });
+      });
+      await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
+      stubUrl = `http://127.0.0.1:${String((stub.address() as AddressInfo).port)}`;
+    });
+
+    afterAll(async () => {
+      await new Promise((resolve) => stub.close(resolve));
+    });
+
+    it('UC-7/S3 without the integration, no terms and everything else works', async () => {
+      expect(await terms()).toEqual({ state: 'off', terms: [] });
+      const instructions = must((await agent(agentA.token)).getInstructions());
+      expect(instructions).not.toContain('list_terms');
+      expect((await call(agentA.token, 'list_terms', { project: 'shop' })).text).toContain('no glossary');
+    });
+
+    it('UC-7/S2 an admin adds the link, and a wrong token is refused before it is saved', async () => {
+      answer = { status: 401, body: {} };
+      const wrong = await admin('PUT', '', { url: stubUrl, token: 'bad' });
+      expect(wrong.statusCode).toBe(400);
+      expect(wrong.json<{ error: string }>().error).toContain('refused that token');
+      expect((await admin('GET', '')).json()).toEqual({ url: null });
+
+      answer = { status: 200, body: {} };
+      expect((await admin('PUT', '', { url: `${stubUrl}/`, token: 'op-secret' })).statusCode).toBe(200);
+      expect((await admin('GET', '')).json()).toEqual({ url: stubUrl });
+      const stored = await withScope(pool, { bypass: true }, (db) =>
+        db.query<{ token_sealed: string }>('SELECT token_sealed FROM openpurpose_links'),
+      );
+      expect(must(stored.rows[0]).token_sealed).not.toContain('op-secret');
+      expect((await http({ cookie: memberA }, 'GET', '/api/t/acme/openpurpose')).statusCode).toBe(403);
+      expect((await http({ token: agentA.token }, 'GET', '/api/t/acme/openpurpose')).statusCode).toBe(403);
+      expect((await http({ cookie: adminA }, 'GET', '/api/t/acme/export')).body).not.toContain('op-secret');
+    });
+
+    it('UC-7/S2 the terms come from OpenPurpose, with the most specific definition, and are kept a while', async () => {
+      answer = { status: 200, body: CONTEXT };
+      calls.length = 0;
+      expect(await terms()).toEqual({
+        state: 'ok',
+        terms: [
+          { term: 'Member', definition: 'Someone who signs in to a Team.' },
+          { term: 'Team', definition: 'The tenant.' },
+        ],
+      });
+      await terms();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ path: '/api/context', auth: 'Bearer op-secret' });
+      expect(JSON.parse(must(calls[0]).body)).toEqual({ remote_url: 'https://github.com/acme/shop.git' });
+    });
+
+    it('UC-7/S1 an agent is told to keep to the terms, and can read them', async () => {
+      const instructions = must((await agent(agentA.token)).getInstructions());
+      expect(instructions).toContain('Use only those terms');
+      expect(instructions).toContain('propose a new one in OpenPurpose');
+      const { text } = await call(agentA.token, 'list_terms', { project: 'shop' });
+      expect(text).toContain('- Member: Someone who signs in to a Team.');
+    });
+
+    it('UC-7/S4 when OpenPurpose can not be reached, the page says so and review still works', async () => {
+      await admin('PUT', '', { url: stubUrl, token: 'op-secret' }); // Clears what was kept.
+      answer = { status: 500, body: {} };
+      expect(await terms()).toEqual({ state: 'unreachable', terms: [] });
+      const ref = await propose();
+      expect((await inboxItem(ref)).ref).toBe(ref);
+      answer = { status: 200, body: CONTEXT };
+    });
+
+    it('UC-7/S3 a public-only server refuses an internal address', async () => {
+      const policy = { mode: 'public' as const, allow: [] };
+      await expect(testLink(policy, stubUrl, 'x')).rejects.toThrow(/internal address/);
+    });
+
+    it('UC-7/S3 removing the link turns it all off again', async () => {
+      expect((await admin('DELETE', '')).statusCode).toBe(200);
+      expect(await terms()).toEqual({ state: 'off', terms: [] });
     });
   });
 });

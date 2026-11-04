@@ -21,6 +21,8 @@ export async function exportTeam(db: Client, teamId: string): Promise<TeamExport
              FROM repositories r WHERE r.project_id = p.id), '[]'),
            'useCases', coalesce((SELECT json_agg(json_build_object(
                'number', u.number, 'title', u.title, 'nextScenarioNumber', u.next_scenario_number,
+               'area', (SELECT a.name FROM areas a WHERE a.id = u.area_id),
+               'proposedArea', u.proposed_area,
                'scenarios', (SELECT coalesce(json_agg(s.number ORDER BY s.number), '[]')
                                FROM scenarios s WHERE s.use_case_id = u.id),
                'retiredAt', u.retired_at, 'retiredBy', u.retired_by,
@@ -104,9 +106,14 @@ export async function importTeam(
     for (const useCase of project.useCases) {
       useCases++;
       const inserted = await db.query<{ id: string }>(
-        `INSERT INTO use_cases (team_id, project_id, number, title, next_scenario_number,
-                                retired_at, retired_by, retire_reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        `WITH made AS (
+           INSERT INTO areas (team_id, project_id, name)
+           SELECT $1, $2, $9::text WHERE $9::text IS NOT NULL
+           ON CONFLICT (project_id, name) DO UPDATE SET name = EXCLUDED.name
+           RETURNING id)
+         INSERT INTO use_cases (team_id, project_id, number, title, next_scenario_number,
+                                retired_at, retired_by, retire_reason, area_id, proposed_area)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT id FROM made), $10) RETURNING id`,
         [
           teamId,
           projectId,
@@ -116,6 +123,8 @@ export async function importTeam(
           useCase.retiredAt,
           actor(useCase.retiredBy),
           useCase.retireReason,
+          useCase.area,
+          useCase.proposedArea,
         ],
       );
       const id = inserted.rows[0]?.id ?? '';

@@ -25,6 +25,7 @@ const STATUS = `CASE WHEN u.retired_at IS NOT NULL THEN 'retired'
 export async function loadCatalogue(db: Client): Promise<Catalogue> {
   const { rows } = await db.query<Catalogue['items'][number] & { number: number }>(
     `SELECT u.id, u.number, u.title, json_build_object('slug', p.slug, 'name', p.name) AS project,
+            ar.name AS area,
             ${STATUS} AS status,
             use_case_health(u.id, coalesce(live.scenario_numbers, latest.scenario_numbers)) AS health,
             coalesce(live.approval_method, latest.approval_method) AS approval,
@@ -33,7 +34,8 @@ export async function loadCatalogue(db: Client): Promise<Catalogue> {
               u.retirement_requested_at IS NOT NULL OR latest.state = 'proposed'
               OR (live.id IS NOT NULL AND live.id <> latest.id)) AS pending
        FROM use_cases u ${JOINS}
-      ORDER BY p.name, u.number`,
+       LEFT JOIN areas ar ON ar.id = u.area_id
+      ORDER BY p.name, ar.name NULLS LAST, u.number`,
   );
   return { items: rows.map(({ number, ...row }) => ({ ...row, ref: `UC-${String(number)}` })) };
 }
@@ -53,6 +55,8 @@ export async function loadUseCase(db: Client, id: string): Promise<UseCaseDetail
     `WITH current AS (SELECT u.id FROM use_cases u WHERE u.id = $1)
      SELECT u.id, u.number, u.title, p.language,
             json_build_object('slug', p.slug, 'name', p.name) AS project,
+            ar.name AS area,
+            ARRAY(SELECT a.name FROM areas a WHERE a.project_id = u.project_id ORDER BY a.name) AS areas,
             ${STATUS} AS status,
             use_case_health(u.id, coalesce(live.scenario_numbers, latest.scenario_numbers)) AS health,
             coalesce(live.original_request, latest.original_request) AS "originalRequest",
@@ -107,7 +111,8 @@ export async function loadUseCase(db: Client, id: string): Promise<UseCaseDetail
                 FROM scenario_events e WHERE e.use_case_id = u.id), '[]') AS history
        FROM current JOIN use_cases u ON u.id = current.id ${JOINS}
        LEFT JOIN actors rb ON rb.id = u.retired_by
-       LEFT JOIN actors ra ON ra.id = u.retirement_requested_by`,
+       LEFT JOIN actors ra ON ra.id = u.retirement_requested_by
+       LEFT JOIN areas ar ON ar.id = u.area_id`,
     [id],
   );
   const row = rows.at(0);

@@ -1,6 +1,6 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import type { Comment, GherkinBlock, StepPhase } from '@open-usecase/contracts';
+import type { Comment, GherkinBlock, GlossaryTerm, StepPhase } from '@open-usecase/contracts';
 
 /** A run of Gherkin: the steps of one phase together, or what stands between them. */
 interface Stanza {
@@ -27,12 +27,53 @@ function stanzas(blocks: readonly GherkinBlock[]): Stanza[] {
   return result;
 }
 
-/** Sets `"values"` and `<placeholders>` apart from the sentence around them. */
-function textParts(text: string): { text: string; value: boolean }[] {
+interface TextPart {
+  text: string;
+  value: boolean;
+  /** The definition, when this part is a glossary term. */
+  definition: string | null;
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A pattern for the terms, longest first, so "use case" wins over "case". Plurals count. */
+function termPattern(terms: readonly GlossaryTerm[]): RegExp | null {
+  if (!terms.length) return null;
+  const words = [...terms]
+    .sort((a, b) => b.term.length - a.term.length)
+    .map((t) => escapeRegExp(t.term));
+  return new RegExp(`\\b(${words.join('|')})(?:s|es)?\\b`, 'giu');
+}
+
+/** The terms a text actually uses. */
+export function termsUsed(text: string, terms: readonly GlossaryTerm[]): GlossaryTerm[] {
+  const pattern = termPattern(terms);
+  if (!pattern) return [];
+  const found = new Set([...text.matchAll(pattern)].map((m) => m[1].toLowerCase()));
+  return terms.filter((t) => found.has(t.term.toLowerCase()));
+}
+
+/** Sets `"values"` and `<placeholders>` apart from the sentence, and marks glossary terms. */
+function textParts(text: string, terms: readonly GlossaryTerm[]): TextPart[] {
+  const pattern = termPattern(terms);
   return text
     .split(/("[^"]*"|<[^>]+>)/)
     .filter(Boolean)
-    .map((part) => ({ text: part, value: /^("|<)/.test(part) }));
+    .flatMap((part): TextPart[] => {
+      if (/^("|<)/.test(part)) return [{ text: part, value: true, definition: null }];
+      if (!pattern) return [{ text: part, value: false, definition: null }];
+      const parts: TextPart[] = [];
+      let at = 0;
+      for (const match of part.matchAll(pattern)) {
+        const start = match.index;
+        if (start > at) parts.push({ text: part.slice(at, start), value: false, definition: null });
+        const term = terms.find((t) => t.term.toLowerCase() === match[1].toLowerCase());
+        parts.push({ text: match[0], value: false, definition: term?.definition ?? null });
+        at = start + match[0].length;
+      }
+      if (at < part.length) parts.push({ text: part.slice(at), value: false, definition: null });
+      return parts;
+    });
 }
 
 /** Gherkin to read, not to parse: Given, When and Then each get their own block. */
@@ -45,6 +86,8 @@ function textParts(text: string): { text: string; value: boolean }[] {
       @for (part of parts(text); track $index) {
         @if (part.value) {
           <code>{{ part.text }}</code>
+        } @else if (part.definition !== null) {
+          <span class="term" tabindex="0" [title]="part.definition">{{ part.text }}</span>
         } @else {
           <span>{{ part.text }}</span>
         }
@@ -184,6 +227,13 @@ function textParts(text: string): { text: string; value: boolean }[] {
       font-size: var(--os-text-xs);
     }
 
+    .term {
+      text-decoration: underline dotted var(--os-brand-border);
+      text-decoration-thickness: 2px;
+      text-underline-offset: 0.2em;
+      cursor: help;
+    }
+
     code {
       padding-inline: 0.3em;
       border-radius: var(--os-radius-sm);
@@ -233,8 +283,13 @@ function textParts(text: string): { text: string; value: boolean }[] {
 })
 export class Gherkin {
   readonly blocks = input.required<GherkinBlock[]>();
+  /** Marked in the text, with their definitions. */
+  readonly terms = input<GlossaryTerm[]>([]);
   protected readonly stanzas = computed(() => stanzas(this.blocks()));
-  protected readonly parts = textParts;
+
+  protected parts(text: string): TextPart[] {
+    return textParts(text, this.terms());
+  }
 }
 
 /** Comments in the order they were written, as a person reads them. */

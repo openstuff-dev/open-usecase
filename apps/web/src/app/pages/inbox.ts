@@ -10,7 +10,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import type { Comment, Inbox, InboxItem, Scenario } from '@open-usecase/contracts';
+import type { Comment, Glossary, GlossaryTerm, Inbox, InboxItem, Scenario } from '@open-usecase/contracts';
 import {
   Button,
   Callout,
@@ -29,7 +29,7 @@ import {
 import { Api, errorText } from '../core/api';
 import { IdempotencyKey } from '../core/idempotency';
 import { onReturn, slowLoading } from '../core/loading';
-import { Comments, Gherkin } from '../shared/gherkin';
+import { Comments, Gherkin, termsUsed } from '../shared/gherkin';
 import { iconInbox } from '../shared/icons';
 import {
   canApprove,
@@ -68,6 +68,37 @@ import {
           proposed by {{ item().proposedBy }}
         </p>
         <h2 class="title">{{ item().title }}</h2>
+        @if (item().area; as area) {
+          <p class="area">
+            {{ area }}
+            @if (item().newArea) {
+              <span class="new">New area: approving adds it</span>
+            }
+          </p>
+        }
+        @if (used().length) {
+          <div class="terms" aria-label="Terms this use case uses">
+            @for (term of used(); track term.term) {
+              <button
+                type="button"
+                class="chip"
+                [class.on]="openTerm() === term.term"
+                [attr.aria-expanded]="openTerm() === term.term"
+                (click)="toggleTerm(term)"
+              >
+                {{ term.term }}
+              </button>
+            }
+          </div>
+          @if (definition(); as definition) {
+            <p class="definition">
+              <strong>{{ openTerm() }}:</strong> {{ definition }}
+            </p>
+          }
+        }
+        @if (glossary().state === 'unreachable') {
+          <p class="area">OpenPurpose can’t be reached, so terms aren’t marked right now.</p>
+        }
       </header>
 
       @if (item().whatChanged; as changed) {
@@ -83,7 +114,7 @@ import {
         </section>
       }
       @if (introBlocks().length) {
-        <app-gherkin [blocks]="introBlocks()" />
+        <app-gherkin [blocks]="introBlocks()" [terms]="glossary().terms" />
       }
       @if (otherComments().length) {
         <section class="note">
@@ -125,7 +156,7 @@ import {
                 </p>
                 <h3 class="name">{{ scenario.name }}</h3>
               </div>
-              <app-gherkin [blocks]="scenario.blocks" />
+              <app-gherkin [blocks]="scenario.blocks" [terms]="glossary().terms" />
               @if (commentsOn(scenario); as comments) {
                 @if (comments.length) {
                   <app-comments [comments]="comments" />
@@ -299,6 +330,53 @@ import {
       text-wrap: balance;
     }
 
+    .area {
+      margin: 0;
+      color: var(--os-fg-light);
+      font-size: var(--os-text-sm);
+      font-weight: var(--os-font-weight-medium);
+    }
+
+    .new {
+      margin-inline-start: var(--os-space-1);
+      color: var(--os-warning-text);
+      font-weight: var(--os-font-weight-regular);
+    }
+
+    .terms {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--os-space-1);
+    }
+
+    .chip {
+      padding: 0.1rem var(--os-space-2);
+      border: 1px var(--os-border-style) var(--os-brand-border);
+      border-radius: var(--os-radius-full);
+      background: var(--os-brand-soft);
+      color: var(--os-brand-text);
+      font: inherit;
+      font-size: var(--os-text-xs);
+      font-weight: var(--os-font-weight-medium);
+      cursor: pointer;
+    }
+
+    .chip.on {
+      background: var(--os-brand-default);
+      color: var(--os-brand-ink);
+    }
+
+    .definition {
+      margin: 0;
+      max-inline-size: 44rem;
+      font-size: var(--os-text-sm);
+      text-wrap: pretty;
+    }
+
+    .definition strong {
+      font-weight: var(--os-font-weight-semibold);
+    }
+
     .note h3 {
       margin: 0 0 var(--os-space-1);
       color: var(--os-fg-muted);
@@ -461,10 +539,29 @@ export class UseCaseReview {
   readonly team = input.required<string>();
   readonly item = input.required<InboxItem>();
   readonly reading = input.required<Reading>();
+  readonly glossary = input<Glossary>({ state: 'off', terms: [] });
   /** The person moved to another scenario. */
   readonly moved = output<Reading>();
   /** The use case was decided or commented on, so the list should load again. */
   readonly changed = output<{ decided?: string }>();
+
+  protected readonly openTerm = signal<string | null>(null);
+
+  /** The terms this use case uses, for the row at the top. */
+  protected readonly used = computed(() =>
+    termsUsed(
+      JSON.stringify([this.item().preamble, this.item().scenarios]),
+      this.glossary().terms,
+    ),
+  );
+
+  protected readonly definition = computed(
+    () => this.used().find((t) => t.term === this.openTerm())?.definition ?? null,
+  );
+
+  protected toggleTerm(term: GlossaryTerm): void {
+    this.openTerm.update((open) => (open === term.term ? null : term.term));
+  }
 
   /** Comments still being typed, per scenario, so moving between scenarios keeps them. */
   private readonly drafts = signal(new Map<string, string>());
@@ -672,30 +769,36 @@ export class UseCaseReview {
       @if (current(); as item) {
         <div class="split">
           <nav aria-label="Use cases waiting">
-            <ul>
-              @for (entry of items; track entry.id) {
-                <li>
-                  <button
-                    type="button"
-                    [class.on]="entry.id === item.id"
-                    [attr.aria-current]="entry.id === item.id ? 'true' : null"
-                    (click)="selected.set(entry.id)"
-                  >
-                    <span class="ref">{{ entry.ref }}</span>
-                    {{ entry.title }}
-                    <small>
-                      {{ entry.scenarios.length }}
-                      {{ entry.scenarios.length === 1 ? 'scenario' : 'scenarios' }}
-                    </small>
-                  </button>
-                </li>
+            @for (group of groups(); track group.area) {
+              @if (group.area) {
+                <h2 class="group">{{ group.area }}</h2>
               }
-            </ul>
+              <ul>
+                @for (entry of group.items; track entry.id) {
+                  <li>
+                    <button
+                      type="button"
+                      [class.on]="entry.id === item.id"
+                      [attr.aria-current]="entry.id === item.id ? 'true' : null"
+                      (click)="selected.set(entry.id)"
+                    >
+                      <span class="ref">{{ entry.ref }}</span>
+                      {{ entry.title }}
+                      <small>
+                        {{ entry.scenarios.length }}
+                        {{ entry.scenarios.length === 1 ? 'scenario' : 'scenarios' }}
+                      </small>
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
           </nav>
           <app-use-case-review
             [team]="team()"
             [item]="item"
             [reading]="readingOf(item)"
+            [glossary]="glossary()"
             (moved)="setReading(item, $event)"
             (changed)="onChanged($event)"
           />
@@ -735,9 +838,16 @@ export class UseCaseReview {
     ul {
       display: grid;
       gap: var(--os-space-1);
-      margin: 0;
+      margin: 0 0 var(--os-space-4);
       padding: 0;
       list-style: none;
+    }
+
+    .group {
+      margin: 0 0 var(--os-space-2);
+      color: var(--os-fg-muted);
+      font-size: var(--os-text-sm);
+      font-weight: var(--os-font-weight-semibold);
     }
 
     nav button {
@@ -780,6 +890,21 @@ export class InboxPage {
   /** Ignores answers for a load that is no longer on screen. */
   private latest = 0;
 
+  /** The list by area, as the server sorted it. Use cases with no area come last. */
+  protected readonly groups = computed(() => {
+    const groups: { area: string | null; items: InboxItem[] }[] = [];
+    for (const item of this.items() ?? []) {
+      const last = groups.at(-1);
+      if (last?.area === item.area) last.items.push(item);
+      else groups.push({ area: item.area, items: [item] });
+    }
+    return groups;
+  });
+
+  /** Terms for the project on screen, loaded when it's opened. */
+  protected readonly glossary = signal<Glossary>({ state: 'off', terms: [] });
+  private readonly projectOnScreen = computed(() => this.current()?.project.slug ?? null);
+
   protected readonly current = computed(() => {
     const items = this.items() ?? [];
     return items.find((item) => item.id === this.selected()) ?? items.at(0) ?? null;
@@ -790,7 +915,20 @@ export class InboxPage {
       this.items.set(null);
       void this.load(this.team());
     });
+    effect(() => {
+      const project = this.projectOnScreen();
+      if (project) void this.loadTerms(this.team(), project);
+    });
     inject(DestroyRef).onDestroy(onReturn(() => void this.load(this.team())));
+  }
+
+  private async loadTerms(team: string, project: string): Promise<void> {
+    try {
+      this.glossary.set(await this.api.get<Glossary>(`/api/t/${team}/projects/${project}/terms`));
+    } catch {
+      // The review works without terms.
+      this.glossary.set({ state: 'unreachable', terms: [] });
+    }
   }
 
   protected readingOf(item: InboxItem): Reading {

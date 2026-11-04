@@ -210,9 +210,9 @@ The glossary lives in OpenPurpose, and only applies once a team has added that i
 are proposed and approved in OpenPurpose, as they are today. The server can't tell whether a word is
 an undefined term, so keeping to the list is a writing rule that agents follow and reviewers check.
 This reopens the settled decision that neither server calls the other; the user decided that on
-2026-11-04. To be built after the gate.
+2026-11-04.
 
-Status: proposed, not built
+Status: proposed, built
 
 ```gherkin
 Feature: Use cases keep to the OpenPurpose glossary
@@ -251,9 +251,9 @@ Feature: Use cases keep to the OpenPurpose glossary
 
 ### UC-8: Use cases are grouped by area
 
-"Area" is the word the user kept. To be built after the gate.
+"Area" is the word the user kept.
 
-Status: proposed, not built
+Status: proposed, built
 
 ```gherkin
 Feature: Use cases are grouped by area

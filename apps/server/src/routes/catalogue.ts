@@ -6,6 +6,7 @@ import { withScope, type Pool } from '../db.js';
 import { notFound } from '../errors.js';
 import { loadCatalogue, loadUseCase } from '../service/catalogue.js';
 import { verifyManually } from '../service/reports.js';
+import { moveToArea } from '../service/usecases.js';
 import { exportTeam, importTeam } from '../service/transfer.js';
 
 const teamParam = z.object({ team: z.string().max(63) });
@@ -51,6 +52,16 @@ export function registerCatalogueRoutes(app: FastifyInstance, pool: Pool): void 
       });
     });
     return reply.code(201).send({ ok: true });
+  });
+
+  app.patch('/api/t/:team/usecases/:id/area', async (request) => {
+    const { team, id } = useCaseParams.parse(request.params);
+    const { area } = z
+      .object({ area: z.string().trim().min(1, 'Name the area.').max(100) })
+      .parse(request.body);
+    const { teamId } = await teamAccess(pool, request, team);
+    await withScope(pool, { teamId }, (db) => moveToArea(db, uuid(id), area));
+    return { ok: true };
   });
 
   app.get('/api/t/:team/export', async (request, reply): Promise<TeamExport> => {

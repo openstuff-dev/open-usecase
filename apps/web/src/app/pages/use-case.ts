@@ -64,6 +64,26 @@ import {
           Feature · {{ useCase.ref }} · {{ useCase.project.name }} · revision {{ useCase.revision }}
         </p>
         <h1>{{ useCase.title }}</h1>
+        <form class="area" (ngSubmit)="move()">
+          <label for="area-name">Area</label>
+          <input
+            os-input
+            id="area-name"
+            name="area"
+            list="area-names"
+            maxlength="100"
+            placeholder="None yet"
+            [(ngModel)]="areaName"
+          />
+          <datalist id="area-names">
+            @for (name of useCase.areas; track name) {
+              <option [value]="name"></option>
+            }
+          </datalist>
+          @if (areaName.trim() && areaName.trim() !== useCase.area) {
+            <button os-button size="sm" type="submit">Move here</button>
+          }
+        </form>
         <div class="badges">
           <span os-badge [tone]="statusTones[useCase.status]">{{
             statusLabels[useCase.status]
@@ -307,6 +327,18 @@ import {
       text-wrap: balance;
     }
 
+    .area {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--os-space-2);
+      align-items: center;
+      font-size: var(--os-text-sm);
+    }
+
+    .area input {
+      inline-size: 14rem;
+    }
+
     .badges {
       display: flex;
       flex-wrap: wrap;
@@ -429,6 +461,7 @@ export class UseCasePage {
   protected readonly dialogOpen = signal(false);
   protected readonly checking = signal<ScenarioEvidence | null>(null);
   protected dialogText = '';
+  protected areaName = '';
   protected readonly sending = signal(false);
   protected readonly dialogError = signal<string | null>(null);
   private readonly key = new IdempotencyKey();
@@ -474,9 +507,20 @@ export class UseCasePage {
       );
       if (load !== this.latest) return;
       this.useCase.set(useCase);
+      this.areaName = useCase.area ?? '';
       this.error.set(null);
     } catch (error) {
       if (load === this.latest) this.error.set(errorText(error));
+    }
+  }
+
+  protected async move(): Promise<void> {
+    try {
+      await this.api.patch(`${this.base}/area`, { area: this.areaName.trim() });
+      this.toaster.show(`Moved to ${this.areaName.trim()}.`);
+      void this.load();
+    } catch (error) {
+      this.error.set(errorText(error));
     }
   }
 

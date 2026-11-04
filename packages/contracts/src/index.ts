@@ -98,6 +98,10 @@ export interface InboxItem {
   /** True if this revision waits for review. False if only the retirement is waiting. */
   needsReview: boolean;
   retirement: RetirementRequest | null;
+  /** The area it's filed under, such as "Billing", or the one it would add. */
+  area: string | null;
+  /** The area is new: approving the use case adds it. */
+  newArea: boolean;
 }
 
 export interface Inbox {
@@ -170,6 +174,7 @@ export interface CatalogueItem {
   ref: string;
   title: string;
   project: { slug: string; name: string };
+  area: string | null;
   status: UseCaseStatus;
   health: Health;
   /** How the revision in force was approved. Null if it hasn't been. */
@@ -188,7 +193,14 @@ export interface ScenarioEvidence {
   name: string;
   blocks: GherkinBlock[];
   health: Health;
-  tests: { suite: string; repository: string; result: string; names: string[]; commit: string; at: string }[];
+  tests: {
+    suite: string;
+    repository: string;
+    result: string;
+    names: string[];
+    commit: string;
+    at: string;
+  }[];
   manual: { by: string; at: string; note: string }[];
 }
 
@@ -212,6 +224,9 @@ export interface UseCaseDetail {
   ref: string;
   title: string;
   project: { slug: string; name: string };
+  area: string | null;
+  /** The project's areas, to move it between. */
+  areas: string[];
   status: UseCaseStatus;
   health: Health;
   originalRequest: string | null;
@@ -224,7 +239,12 @@ export interface UseCaseDetail {
   preamble: GherkinBlock[];
   scenarios: ScenarioEvidence[];
   /** A newer revision than the one in force, with its text. */
-  newer: { revision: number; state: string; preamble: GherkinBlock[]; scenarios: Scenario[] } | null;
+  newer: {
+    revision: number;
+    state: string;
+    preamble: GherkinBlock[];
+    scenarios: Scenario[];
+  } | null;
   revisions: RevisionSummary[];
   comments: Comment[];
   /** Only when a scenario's health changed. */
@@ -246,6 +266,8 @@ export interface TeamExport {
     useCases: {
       number: number;
       title: string;
+      area: string | null;
+      proposedArea: string | null;
       nextScenarioNumber: number;
       scenarios: number[];
       retiredAt: string | null;
@@ -278,4 +300,20 @@ export interface TeamExport {
       history: { scenario: number; health: Health; commit: string | null; at: string }[];
     }[];
   }[];
+}
+
+export interface GlossaryTerm {
+  term: string;
+  definition: string;
+}
+
+/** A project's terms, from OpenPurpose. `off`: the team hasn't added the integration. */
+export interface Glossary {
+  state: 'off' | 'ok' | 'unreachable';
+  terms: GlossaryTerm[];
+}
+
+/** A team's link to OpenPurpose. The token never comes back. */
+export interface OpenPurposeLink {
+  url: string | null;
 }

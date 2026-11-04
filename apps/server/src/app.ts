@@ -4,17 +4,28 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { actorFromToken, bearer, registerAuth } from './auth.js';
 import { type Config } from './config.js';
-import type { Pool } from './db.js';
+import { withScope, type Pool } from './db.js';
 import { registerErrorHandler } from './errors.js';
 import { registerIdempotency } from './idempotency.js';
 import { createMcpServer } from './mcp.js';
+import { loadVault } from './crypto.js';
 import { registerActorRoutes } from './routes/actors.js';
+import { registerGlossaryRoutes } from './routes/glossary.js';
 import { registerCatalogueRoutes } from './routes/catalogue.js';
 import { registerReviewRoutes } from './routes/review.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerV1Routes } from './routes/v1.js';
+import { policyFrom } from './safe-fetch.js';
+import { GlossaryReader } from './service/glossary.js';
 
 const VERSION = '0.0.0';
+
+/** One read per MCP request, because the instructions depend on it. */
+async function hasGlossary(pool: Pool, teamId: string): Promise<boolean> {
+  return withScope(pool, { teamId }, async (db) =>
+    Boolean((await db.query('SELECT 1 FROM openpurpose_links')).rowCount),
+  );
+}
 
 const refuseMcp = (reply: FastifyReply, status: number, message: string) =>
   reply
@@ -39,13 +50,17 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
   registerActorRoutes(app, pool);
   registerSettingsRoutes(app, pool);
   registerV1Routes(app, pool, config);
+  const vault = await loadVault(pool, config, app.log);
+  const glossary = new GlossaryReader(policyFrom(config), vault);
+  registerGlossaryRoutes(app, pool, glossary, vault, policyFrom(config));
 
   // MCP over stateless Streamable HTTP: a new server per request, as in OpenPurpose.
   app.post('/mcp', async (request, reply) => {
     const actor = await actorFromToken(pool, bearer(request.headers.authorization));
     if (!actor) return refuseMcp(reply, 401, 'That token is missing, unknown or revoked.');
     if (actor.kind !== 'agent') return refuseMcp(reply, 403, 'Only agents can use MCP.');
-    const server = createMcpServer(pool, actor, VERSION);
+    const linked = await hasGlossary(pool, actor.teamId);
+    const server = createMcpServer(pool, actor, VERSION, glossary, linked);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
