@@ -226,7 +226,25 @@ import {
       }
 
       @if (item().needsReview) {
-        <div class="decision">
+        <div class="decision review">
+          @if (!mayApprove() || unsaved().length) {
+            <div class="notes">
+              @if (!mayApprove()) {
+                <p>Read every scenario to approve.</p>
+              }
+              @if (unsaved().length) {
+                <p class="unsaved">
+                  Save or clear your comment on {{ unsaved().join(', ') }}. It isn't sent yet.
+                </p>
+              }
+            </div>
+          }
+          <button os-button type="button" variant="ghost" (click)="openDecision('reject')">
+            Reject
+          </button>
+          <button os-button type="button" (click)="openDecision('request-changes')">
+            Ask for changes
+          </button>
           <button
             os-button
             variant="primary"
@@ -237,20 +255,6 @@ import {
           >
             Approve {{ item().ref }}
           </button>
-          <button os-button type="button" (click)="openDecision('request-changes')">
-            Ask for changes
-          </button>
-          <button os-button type="button" variant="ghost" (click)="openDecision('reject')">
-            Reject
-          </button>
-          @if (!mayApprove()) {
-            <p>Read every scenario to approve.</p>
-          }
-          @if (unsaved().length) {
-            <p class="unsaved">
-              Save or clear your comment on {{ unsaved().join(', ') }}. It isn't sent yet.
-            </p>
-          }
         </div>
       }
     </article>
@@ -529,6 +533,16 @@ import {
       align-items: center;
       padding-block-start: var(--os-space-6);
       border-block-start: 1px var(--os-border-style) var(--os-border-default);
+    }
+
+    .decision.review {
+      justify-content: flex-end;
+    }
+
+    .notes {
+      display: grid;
+      flex: 1 1 16rem;
+      gap: var(--os-space-1);
     }
 
     .decision p {
