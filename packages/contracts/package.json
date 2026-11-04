@@ -1,0 +1,34 @@
+{
+  "name": "@open-usecase/contracts",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  },
+  "license": "MIT",
+  "nx": {
+    "name": "contracts",
+    "tags": [
+      "type:package"
+    ],
+    "targets": {
+      "build": {
+        "outputs": [
+          "{projectRoot}/dist"
+        ]
+      }
+    }
+  },
+  "private": true,
+  "description": "Types shared by the OpenUsecase server and web app. Not published."
+}

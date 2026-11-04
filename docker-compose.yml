@@ -1,8 +1,36 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: openusecase
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openusecase}
+      POSTGRES_DB: openusecase
+    volumes:
+      - openusecase-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U openusecase']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   app:
     build: .
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
+      DATABASE_URL: postgres://openusecase:${POSTGRES_PASSWORD:-openusecase}@db:5432/openusecase
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Every setting is described in .env.example.
+      OPENUSECASE_PUBLIC_URL: ${OPENUSECASE_PUBLIC_URL:-http://localhost:8080}
+      OPENUSECASE_ADMIN_EMAIL: ${OPENUSECASE_ADMIN_EMAIL:-admin@example.com}
+      OPENUSECASE_ADMIN_PASSWORD: ${OPENUSECASE_ADMIN_PASSWORD:-}
+      OPENUSECASE_SESSION_DAYS: ${OPENUSECASE_SESSION_DAYS:-30}
+      OPENUSECASE_TRUST_PROXY: ${OPENUSECASE_TRUST_PROXY:-}
     ports:
       - '${PORT:-8080}:8080'
     restart: unless-stopped
+
+volumes:
+  openusecase-db:

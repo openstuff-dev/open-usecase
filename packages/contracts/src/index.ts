@@ -1,0 +1,63 @@
+/** Types shared by the server and the web app. */
+
+export type Role = 'admin' | 'member';
+
+export interface TeamRef {
+  slug: string;
+  name: string;
+  role: Role;
+}
+
+export interface Me {
+  id: string;
+  email: string;
+  name: string;
+  isServerAdmin: boolean;
+  teams: TeamRef[];
+}
+
+/** A use case's status. The trial has these three; the others arrive in phase 6 and 8. */
+export type UseCaseStatus = 'proposed' | 'changes_requested' | 'approved';
+
+export interface Scenario {
+  /** `2` in `UC-142/S2`. */
+  number: number;
+  name: string;
+  /** The Gherkin as written, without its tag: steps, tables and all. */
+  text: string;
+}
+
+export interface Comment {
+  id: string;
+  /** Which revision it was written on. */
+  revision: number;
+  /** The scenario it's about, or null when it's about the whole use case. */
+  scenario: number | null;
+  body: string;
+  author: string;
+  createdAt: string;
+}
+
+/** A use case waiting for a person. */
+export interface InboxItem {
+  id: string;
+  /** `UC-142`. */
+  ref: string;
+  title: string;
+  project: { slug: string; name: string };
+  revision: number;
+  proposedBy: string;
+  proposedAt: string;
+  /** What the user asked for, word for word, when the agent sent it. */
+  originalRequest: string | null;
+  /** What the agent says changed since the last revision. */
+  whatChanged: string | null;
+  /** The Gherkin before the first scenario: the Feature line, a description, a Background. */
+  preamble: string;
+  scenarios: Scenario[];
+  comments: Comment[];
+}
+
+export interface Inbox {
+  items: InboxItem[];
+}
