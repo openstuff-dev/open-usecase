@@ -107,3 +107,17 @@ Stay a separate project for now: criterion 3 passed, so the fixed rule doesn't p
 again once UC-7 is built, because the overlap with OpenPurpose is growing.
 
 **The user makes the final call.** Nothing in stage B starts until they say so.
+
+## The user's decision (2026-11-04)
+
+**Option B: build the rest of the product.** The user's reason, in their words: "I haven't tried using
+open-usecase with a product that is already built, where I need to add a new feature, thus knowing a bit more
+about the product. We're basically just inventing random scenarios in this test, and having me try and read
+them, without ever seeing the product in action."
+
+That overrides the recommendation above, and the rule that failing criteria 1 and 2 means rethinking first. It
+also names a real limit of this trial: the scenarios were about behaviour the user had never seen in use. The
+question stays open until the user has used it on a feature for a product they know.
+
+On the comment on UC-1/S7, the user said they weren't aware that approving ends the review.
+

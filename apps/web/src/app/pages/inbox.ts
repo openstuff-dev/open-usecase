@@ -527,15 +527,34 @@ export class Comments {
     </dialog>
   `,
   styles: `
+    :host {
+      display: block;
+      container-type: inline-size;
+      min-inline-size: 0;
+    }
+
     article {
       display: grid;
       gap: var(--os-space-6);
-      min-inline-size: 0;
+      padding: var(--os-space-4);
+      border: 1px var(--os-border-style) var(--os-border-default);
+      border-radius: var(--os-radius-xl);
+      background: var(--os-bg-surface-100);
+      box-shadow: var(--os-shadow-xs);
+    }
+
+    @container (inline-size > 40rem) {
+      article {
+        gap: var(--os-space-8);
+        padding: var(--os-space-8);
+      }
     }
 
     header {
       display: grid;
       gap: var(--os-space-2);
+      padding-block-end: var(--os-space-6);
+      border-block-end: 1px var(--os-border-style) var(--os-border-default);
     }
 
     .kicker {
@@ -636,7 +655,7 @@ export class Comments {
       padding: var(--os-space-6);
       border: 1px var(--os-border-style) var(--os-border-default);
       border-radius: var(--os-radius-lg);
-      background: var(--os-bg-surface-100);
+      background: var(--os-bg-default);
     }
 
     .number {
@@ -694,9 +713,8 @@ export class Comments {
       flex-wrap: wrap;
       gap: var(--os-space-3);
       align-items: center;
-      padding: var(--os-space-3) var(--os-space-4);
-      border: 1px var(--os-border-style) var(--os-border-default);
-      border-radius: var(--os-radius-lg);
+      padding-block-start: var(--os-space-6);
+      border-block-start: 1px var(--os-border-style) var(--os-border-default);
     }
 
     .decision p {
