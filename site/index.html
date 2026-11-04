@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenUsecase: Use cases agents propose, people approve and tests prove</title>
+    <meta
+      name="description"
+      content="OpenUsecase is for people who work with coding agents. An agent writes down the behaviour before it builds, you approve it, and tests prove it. Open source and self-hostable."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="canonical" href="https://usecase.openstuff.dev/" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="OpenUsecase" />
+    <meta
+      property="og:title"
+      content="OpenUsecase: Use cases agents propose, people approve and tests prove"
+    />
+    <meta
+      property="og:description"
+      content="Agents write down the behaviour before they build, you approve it, and tests prove it. Open source, MIT, self-hostable."
+    />
+    <meta property="og:url" content="https://usecase.openstuff.dev/" />
+    <meta property="og:image" content="https://usecase.openstuff.dev/assets/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="OpenUsecase: Use cases agents propose, people approve and tests prove"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="preload"
+      href="assets/os/fonts/Geist-Variable.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="assets/site.css" />
+    <script type="module" src="assets/site.js"></script>
+  </head>
+  <body class="os-site">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <symbol id="i-check" viewBox="0 0 16 16">
+        <path
+          d="M3.5 8.5l3 3 6-7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 16 16">
+        <path
+          d="M4.5 4.5l7 7m0-7l-7 7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-dash" viewBox="0 0 16 16">
+        <path
+          d="M4 8h8"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 16 16">
+        <g fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+          <path
+            d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5"
+          />
+        </g>
+      </symbol>
+      <symbol id="i-github" viewBox="0 0 16 16">
+        <path
+          fill="currentColor"
+          d="M8 .2a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2z"
+        />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 16 16">
+        <path
+          d="M3 8h10m-4-4 4 4-4 4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="i-menu" viewBox="0 0 16 16">
+        <path
+          d="M2.5 4.5h11m-11 4h11m-11 4h11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-warn" viewBox="0 0 16 16">
+        <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+          <path d="M8 2 14.5 13.5h-13z" />
+          <path d="M8 6.5v3" stroke-linecap="round" />
+        </g>
+        <circle cx="8" cy="11.6" r=".8" fill="currentColor" />
+      </symbol>
+      <symbol id="i-layers" viewBox="0 0 20 20">
+        <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+          <path d="M10 2.5 17.5 6.5 10 10.5 2.5 6.5z" />
+          <path d="m2.5 10 7.5 4 7.5-4M2.5 13.5l7.5 4 7.5-4" />
+        </g>
+      </symbol>
+      <symbol id="i-building" viewBox="0 0 20 20">
+        <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+          <rect x="3.5" y="2.5" width="9" height="15" rx="1" />
+          <path d="M12.5 7.5h3a1 1 0 0 1 1 1v9h-4M6.5 6h3M6.5 9h3M6.5 12h3" />
+        </g>
+      </symbol>
+      <symbol id="i-shield" viewBox="0 0 20 20">
+        <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+          <path d="M10 2.5 16 5v5c0 3.6-2.5 6.3-6 7.5C6.5 16.3 4 13.6 4 10V5z" />
+          <path d="m7.5 10 2 2 3.5-4" stroke-linecap="round" />
+        </g>
+      </symbol>
+      <symbol id="i-users" viewBox="0 0 20 20">
+        <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="7.5" cy="7" r="3" />
+          <path d="M2.5 16.5c.6-2.6 2.6-4 5-4s4.4 1.4 5 4" />
+          <path d="M13 4.3a3 3 0 0 1 0 5.4M14.5 12.8c1.4.5 2.5 1.8 3 3.7" />
+        </g>
+      </symbol>
+      <symbol id="i-key" viewBox="0 0 20 20">
+        <g
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="6.5" cy="13.5" r="3.5" />
+          <path d="m9 11 7.5-7.5M14 6l2 2M12 8l1.5 1.5" />
+        </g>
+      </symbol>
+      <symbol id="i-swap" viewBox="0 0 20 20">
+        <g
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M4 7h12m-3-3 3 3-3 3M16 13H4m3-3-3 3 3 3" />
+        </g>
+      </symbol>
+    </svg>
+
+    <a class="os-skip-link" href="#main">Skip to content</a>
+
+    <!-- 1. Top bar -->
+    <header class="os-topbar">
+      <div class="os-wrap">
+        <a class="os-brand" href="./" aria-label="OpenUsecase home">
+          <svg class="os-mark" aria-hidden="true">
+            <use href="assets/logo.svg#mark-open-usecase" />
+          </svg>
+          <span class="os-wordmark" aria-hidden="true">Open<b>Usecase</b></span>
+        </a>
+        <nav class="os-nav" aria-label="Main">
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#self-host">Self-host</a>
+          <a href="https://github.com/openstuff-dev/open-usecase">GitHub</a>
+        </nav>
+        <div class="os-topbar-actions">
+          <a class="os-button" data-variant="primary" href="#self-host">Self-host it</a>
+          <button
+            class="os-button os-menu-button"
+            data-variant="ghost"
+            data-icon-only
+            popovertarget="os-menu"
+            aria-label="Open menu"
+          >
+            <svg class="os-icon" aria-hidden="true"><use href="#i-menu" /></svg>
+          </button>
+        </div>
+      </div>
+      <nav id="os-menu" class="os-menu" popover aria-label="Mobile">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#self-host">Self-host</a>
+        <a href="https://github.com/openstuff-dev/open-usecase">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <!-- 2. Hero -->
+      <section class="os-hero" aria-labelledby="hero-title">
+        <div class="os-wrap">
+          <div class="os-hero-copy">
+            <a class="os-pill" href="https://github.com/openstuff-dev/open-usecase"
+              ><b>MIT</b> Open source and self-hostable</a
+            >
+            <h1 id="hero-title">
+              Agents build what you agreed to.<span class="os-soft">Tests prove it.</span>
+            </h1>
+            <p class="os-hero-sub">
+              OpenUsecase is for people who work with coding agents. Before it builds, an agent
+              writes down the behaviour. You approve it, and tests carry its ID.
+            </p>
+            <div class="os-cta-row">
+              <a class="os-button" data-size="lg" data-variant="primary" href="#self-host"
+                >Self-host it <svg class="os-icon" aria-hidden="true"><use href="#i-arrow" /></svg
+              ></a>
+              <a
+                class="os-button"
+                data-size="lg"
+                href="https://github.com/openstuff-dev/open-usecase#readme"
+                >Read the guide</a
+              >
+            </div>
+            <p class="os-hero-meta">
+              <span>Open source</span> · <span>MIT</span> · <span>Agents over MCP</span> ·
+              <span>Tests through JUnit XML</span>
+            </p>
+          </div>
+
+          <figure
+            class="os-hero-visual"
+            aria-label="A use case with one scenario: approved by a person, proven by a tagged test, and reading done and passing."
+          >
+            <div class="os-term">
+              <div class="os-term-bar">
+                <span class="os-term-dots" aria-hidden="true"><i></i><i></i><i></i></span
+                ><span class="os-term-title">UC-142 · acme/shop</span>
+              </div>
+              <pre><code><span class="os-c-mut">Feature:</span> Change the primary colour
+
+  <span class="os-c-brand">UC-142/S2</span> Reject an invalid colour
+    <span class="os-c-mut">Given</span> I am on the settings page
+    <span class="os-c-mut">When</span> I enter a value that isn't a colour
+    <span class="os-c-mut">Then</span> I see an error
+    <span class="os-c-mut">And</span> the app keeps the current colour
+
+<span class="os-c-ok">✓</span> Approved by Mia
+<span class="os-c-ok">✓</span> UC-142/S2 rejects an invalid colour
+<span class="os-c-ok">done · passing</span></code></pre>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <!-- 3. The problem -->
+      <section class="os-section" data-divider aria-labelledby="problem-title">
+        <div class="os-wrap">
+          <div class="os-section-head">
+            <span class="os-eyebrow">The problem</span>
+            <h2 id="problem-title">It works, but it isn't what you meant.</h2>
+            <p class="os-lede">
+              An agent turns a short request into code, then writes tests for that code. Every test
+              passes. You find out what it decided when you read the diff, or when a customer does.
+            </p>
+          </div>
+
+          <div class="os-files">
+            <figure class="os-file">
+              <figcaption class="os-file-head">
+                <span><b>You</b> asked</span><small>one line in a chat</small>
+              </figcaption>
+              <ol>
+                <li>Let people change the colour</li>
+              </ol>
+            </figure>
+            <figure class="os-file">
+              <figcaption class="os-file-head">
+                <span><b>The agent</b> built</span><small>412 lines in a diff</small>
+              </figcaption>
+              <ol>
+                <li>A colour field in settings</li>
+                <li data-drift="nobody agreed to this">Saves whatever is typed</li>
+              </ol>
+            </figure>
+            <figure class="os-file">
+              <figcaption class="os-file-head">
+                <span><b>The tests</b> prove</span><small>all passing</small>
+              </figcaption>
+              <ol>
+                <li>The field saves its value</li>
+                <li data-drift="proves the code, not your intent">Any value is stored</li>
+              </ol>
+            </figure>
+          </div>
+          <div class="os-notes">
+            <p><b>Agreed too late</b>You see the decisions after they're built, inside a diff.</p>
+            <p><b>Plans disappear</b>The plan lives in a chat that ends with the task.</p>
+            <p><b>Nothing to ask</b>Months later, nobody can say what the product should do.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Features -->
+      <section class="os-section" data-divider id="features" aria-labelledby="features-title">
+        <div class="os-wrap">
+          <div class="os-section-head">
+            <span class="os-eyebrow">Features</span>
+            <h2 id="features-title">Agree first, build second, prove it after.</h2>
+            <p class="os-lede">
+              Each use case goes from a proposal to a permanent record of what your product does.
+            </p>
+          </div>
+
+          <div class="os-bento">
+            <article
+              class="os-tile"
+              data-span="2"
+              data-rows="2"
+              data-size="lg"
+              tabindex="0"
+              aria-labelledby="t-main"
+            >
+              <span class="os-tile-tag">The heart of OpenUsecase</span>
+              <div class="os-viz" data-layout="split" aria-hidden="true">
+                <div class="os-viz-list">
+                  <p class="os-viz-bubble">
+                    <span class="os-viz-who">you</span>Let people change the colour.
+                  </p>
+                  <p class="os-viz-who" data-play="fade" style="--os-play-delay: 60ms">
+                    → the agent proposes, and stops
+                  </p>
+                  <div class="os-viz-panel" data-play="rise" style="--os-play-delay: 160ms">
+                    <div class="os-viz-panel-head">
+                      <b>UC-142/S2</b><span class="os-badge" data-tone="brand">new</span>
+                    </div>
+                    <div class="os-viz-panel-body">
+                      <span class="os-viz-add">An invalid colour shows an error</span>
+                    </div>
+                    <div class="os-viz-panel-foot">
+                      <span class="os-viz-avatar">MI</span>Mia
+                      <span
+                        class="os-badge"
+                        data-tone="success"
+                        data-play="pop"
+                        style="--os-play-delay: 620ms"
+                        >✓ approved</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <ul class="os-viz-list">
+                  <li class="os-viz-list-head"><span>Catalogue</span><span>4</span></li>
+                  <li class="os-viz-row" data-new data-play="grow" style="--os-play-delay: 900ms">
+                    UC-142 Primary colour
+                  </li>
+                  <li class="os-viz-row">UC-141 Refunds</li>
+                  <li class="os-viz-row">UC-138 Invoices</li>
+                  <li class="os-viz-row">UC-120 Sign-in</li>
+                </ul>
+              </div>
+              <h3 id="t-main">A review you can do in a few minutes</h3>
+              <p>
+                The inbox shows one scenario at a time, in plain language. Approve it, ask for
+                changes or reject it. Only then does the agent start building.
+              </p>
+            </article>
+
+            <article class="os-tile" tabindex="0" aria-labelledby="t-health">
+              <div class="os-viz" aria-hidden="true">
+                <ul class="os-viz-list" style="inline-size: min(100%, 17rem)">
+                  <li class="os-viz-list-head"><span>Test health</span></li>
+                  <li class="os-viz-row">
+                    UC-120 <span class="os-badge" data-tone="success">passing</span>
+                  </li>
+                  <li class="os-viz-row" data-play="grow" data-tone="warning">
+                    UC-138 <span class="os-badge" data-tone="danger">failing</span>
+                  </li>
+                  <li class="os-viz-row">UC-141 <span class="os-badge">no evidence</span></li>
+                </ul>
+              </div>
+              <h3 id="t-health">Status you can trust</h3>
+              <p>
+                A use case is done when tagged tests pass on the default branch. A broken test turns
+                it to <code>done · failing</code>.
+              </p>
+            </article>
+
+            <article class="os-tile" tabindex="0" aria-labelledby="t-plates">
+              <div class="os-viz" aria-hidden="true">
+                <div class="os-viz-plates">
+                  <div class="os-viz-plate" style="--i: 0">
+                    <span>On arrival</span><span>no review</span>
+                  </div>
+                  <div class="os-viz-plate" style="--i: 1">
+                    <span>An agent</span><span>reviewer</span>
+                  </div>
+                  <div class="os-viz-plate" data-current style="--i: 2">
+                    <span>A person</span><span>default</span>
+                  </div>
+                </div>
+              </div>
+              <h3 id="t-plates">You choose how much to review</h3>
+              <p>
+                An admin sets one mode per agent, and each use case records how it was approved. No
+                agent can change its own mode.
+              </p>
+            </article>
+
+            <article class="os-tile" tabindex="0" aria-labelledby="t-ask">
+              <div class="os-viz" data-layout="stack" aria-hidden="true">
+                <p class="os-viz-bubble">
+                  <span class="os-viz-who">you</span>Isn't it true that invalid colours are refused?
+                </p>
+                <p class="os-viz-who" data-play="fade" style="--os-play-delay: 240ms">
+                  → Yes, UC-142/S2. Its tests are passing.
+                </p>
+              </div>
+              <h3 id="t-ask">Answers that say how they know</h3>
+              <p>
+                Agents answer from the catalogue and tell you how well it's backed up: tested, only
+                proposed or not covered.
+              </p>
+            </article>
+
+            <article class="os-tile" tabindex="0" aria-labelledby="t-check">
+              <div class="os-viz" data-layout="stack" aria-hidden="true">
+                <div class="os-term">
+                  <div class="os-term-bar">
+                    <span class="os-term-dots"><i></i><i></i><i></i></span
+                    ><span class="os-term-title">pull request</span>
+                  </div>
+                  <pre><code><span class="os-c-mut">Use cases: UC-142</span>
+<span class="os-c-ok" data-play="rise" style="--os-play-delay: 200ms">✔ UC-142 approved</span>
+<span class="os-c-warn" data-play="rise" style="--os-play-delay: 360ms">✖ UC-142/S3 has no test</span></code></pre>
+                </div>
+              </div>
+              <h3 id="t-check">A check on every pull request</h3>
+              <p>
+                It fails unless the PR names approved use cases, or says why it has none, and every
+                scenario has a tagged test.
+              </p>
+            </article>
+
+            <article class="os-tile" tabindex="0" aria-labelledby="t-tree">
+              <div class="os-viz" aria-hidden="true">
+                <ul class="os-viz-tree">
+                  <li data-play="highlight" style="--d: 0">
+                    Billing
+                    <span
+                      class="os-badge"
+                      data-tone="brand"
+                      data-play="fade"
+                      style="--os-play-delay: 260ms"
+                      >12 use cases</span
+                    >
+                  </li>
+                  <li data-play="highlight" style="--d: 1; --depth: 1">UC-138 Invoices</li>
+                  <li data-play="highlight" style="--d: 2; --depth: 1">UC-141 Refunds</li>
+                  <li data-play="dim">Settings</li>
+                  <li data-play="dim" style="--depth: 1">UC-142 Primary colour</li>
+                </ul>
+              </div>
+              <h3 id="t-tree">A catalogue of what your product does</h3>
+              <p>
+                Use cases stay after they ship, grouped by area and searchable. Rejected ones stay
+                too, so nobody proposes them again unaware.
+              </p>
+            </article>
+
+            <article class="os-tile" tabindex="0" aria-labelledby="t-wires">
+              <div class="os-viz" aria-hidden="true">
+                <svg class="os-viz-wires" viewBox="0 0 320 170">
+                  <g>
+                    <rect x="8" y="12" width="96" height="28" rx="6" />
+                    <text x="56" y="30" text-anchor="middle">agents</text>
+                  </g>
+                  <g>
+                    <rect x="8" y="71" width="96" height="28" rx="6" />
+                    <text x="56" y="89" text-anchor="middle">people</text>
+                  </g>
+                  <g>
+                    <rect x="8" y="130" width="96" height="28" rx="6" />
+                    <text x="56" y="148" text-anchor="middle">CI</text>
+                  </g>
+                  <path class="os-viz-wire" d="M104 26C150 26 160 85 206 85" />
+                  <path class="os-viz-wire" d="M104 85H206" />
+                  <path class="os-viz-wire" d="M104 144C150 144 160 85 206 85" />
+                  <path data-play="pulse" style="--d: 0" d="M104 26C150 26 160 85 206 85" />
+                  <path data-play="pulse" style="--d: 1" d="M104 85H206" />
+                  <path data-play="pulse" style="--d: 2" d="M104 144C150 144 160 85 206 85" />
+                  <g data-node>
+                    <rect x="206" y="64" width="106" height="42" rx="8" />
+                    <text x="259" y="89" text-anchor="middle">OpenUsecase</text>
+                  </g>
+                </svg>
+              </div>
+              <h3 id="t-wires">One record for everyone</h3>
+              <p>
+                Agents work over MCP, people in the inbox, and CI sends test results. Each has its
+                own identity, so you can see who did what.
+              </p>
+            </article>
+
+            <article class="os-tile" data-span="2" tabindex="0" aria-labelledby="t-type">
+              <div class="os-viz" data-layout="stack" aria-hidden="true">
+                <div class="os-term">
+                  <div class="os-term-bar">
+                    <span class="os-term-dots"><i></i><i></i><i></i></span
+                    ><span class="os-term-title">~/open-usecase</span>
+                  </div>
+                  <pre><code><span class="os-c-mut">$ </span><span data-play="type" style="--chars: 25">docker compose up --build</span><span class="os-viz-caret"></span>
+<span class="os-c-ok" data-play="rise" style="--os-play-delay: 700ms">✔ open-usecase started</span>
+<span class="os-c-mut" data-play="rise" style="--os-play-delay: 860ms">→ open http://localhost:8080</span></code></pre>
+                </div>
+              </div>
+              <h3 id="t-type">Self-host in one command</h3>
+              <p>
+                One Docker image and Postgres, configured with environment variables, with a default
+                for every setting.
+              </p>
+            </article>
+          </div>
+
+          <div class="os-also">
+            <div>
+              <h3>Shared words</h3>
+              <p>
+                Link <a href="https://purpose.openstuff.dev">OpenPurpose</a> to mark glossary terms
+                in the inbox and keep agents to them. It's optional.
+              </p>
+            </div>
+            <div>
+              <h3>Checks by hand</h3>
+              <p>Some things have no test. A person can verify a scenario, and it says so.</p>
+            </div>
+            <div>
+              <h3>Export and import</h3>
+              <p>Everything you put in comes out again, and goes back in.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. How it works -->
+      <section class="os-section" data-divider id="how" aria-labelledby="how-title">
+        <div class="os-wrap">
+          <div class="os-section-head" data-align="center">
+            <span class="os-eyebrow">How it works</span>
+            <h2 id="how-title">Running in five minutes.</h2>
+          </div>
+          <ol class="os-steps">
+            <li class="os-step">
+              <span class="os-step-n">1</span>
+              <h3>Run it</h3>
+              <p>Run it on your own server, then add a team, a project and an agent in Settings.</p>
+              <div class="os-term">
+                <div class="os-term-bar">
+                  <span class="os-term-dots" aria-hidden="true"><i></i><i></i><i></i></span
+                  ><span class="os-term-title">terminal</span
+                  ><button class="os-copy" type="button" data-copy="code-run">
+                    <svg aria-hidden="true"><use href="#i-copy" /></svg><span>Copy</span>
+                  </button>
+                </div>
+                <pre><code id="code-run"><span class="os-c-mut">$ </span>git clone https://github.com/openstuff-dev/open-usecase
+<span class="os-c-mut">$ </span>cd open-usecase &amp;&amp; cp .env.example .env
+<span class="os-c-mut">$ </span>docker compose up --build</code></pre>
+              </div>
+            </li>
+            <li class="os-step">
+              <span class="os-step-n">2</span>
+              <h3>Connect your agent</h3>
+              <p>
+                OpenUsecase is an MCP server, and it tells an agent the workflow when it connects.
+                Ask for something a user can see. The agent proposes a use case and stops.
+              </p>
+            </li>
+            <li class="os-step">
+              <span class="os-step-n">3</span>
+              <h3>Approve, and let CI prove it</h3>
+              <p>
+                Approve it in the inbox and the agent builds it. Name tests with the scenario's ID,
+                and CI turns the use case to <code>done · passing</code>.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- 6. Why -->
+      <section class="os-section" data-divider aria-labelledby="why-title">
+        <div class="os-wrap">
+          <div class="os-section-head">
+            <span class="os-eyebrow">Why OpenUsecase</span>
+            <h2 id="why-title">A plan in a chat ends with the chat.</h2>
+          </div>
+          <div class="os-compare-box">
+            <table class="os-compare">
+              <thead>
+                <tr>
+                  <th scope="col"><span class="os-visually-hidden">What matters</span></th>
+                  <th scope="col">A plan in a chat or a file</th>
+                  <th scope="col" data-us>OpenUsecase</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">You agree before it's built</th>
+                  <td>
+                    <span class="os-yn" data-answer="partly"
+                      ><svg aria-hidden="true"><use href="#i-dash" /></svg>Partly</span
+                    >If you read it, and the agent waits.
+                  </td>
+                  <td data-us>
+                    <span class="os-yn" data-answer="yes"
+                      ><svg aria-hidden="true"><use href="#i-check" /></svg>Yes</span
+                    >The agent stops until a use case is approved.
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Tests point back at what you agreed</th>
+                  <td>
+                    <span class="os-yn" data-answer="no"
+                      ><svg aria-hidden="true"><use href="#i-x" /></svg>No</span
+                    >Nothing links a test to a plan.
+                  </td>
+                  <td data-us>
+                    <span class="os-yn" data-answer="yes"
+                      ><svg aria-hidden="true"><use href="#i-check" /></svg>Yes</span
+                    >Each test carries a scenario's ID.
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Still true a year later</th>
+                  <td>
+                    <span class="os-yn" data-answer="no"
+                      ><svg aria-hidden="true"><use href="#i-x" /></svg>No</span
+                    >It goes stale without saying so.
+                  </td>
+                  <td data-us>
+                    <span class="os-yn" data-answer="yes"
+                      ><svg aria-hidden="true"><use href="#i-check" /></svg>Yes</span
+                    >A failing test shows on the use case.
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">You own the data</th>
+                  <td>
+                    <span class="os-yn" data-answer="partly"
+                      ><svg aria-hidden="true"><use href="#i-dash" /></svg>Partly</span
+                    >A file is yours. A chat may not be.
+                  </td>
+                  <td data-us>
+                    <span class="os-yn" data-answer="yes"
+                      ><svg aria-hidden="true"><use href="#i-check" /></svg>Yes</span
+                    >Self-host it, and export everything.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. Open source -->
+      <section class="os-section" data-divider id="self-host" aria-labelledby="oss-title">
+        <div class="os-wrap os-split">
+          <div>
+            <span class="os-eyebrow">Open source</span>
+            <h2 id="oss-title">Read the code, run it, change it.</h2>
+            <ul class="os-checklist">
+              <li>
+                <svg aria-hidden="true"><use href="#i-check" /></svg
+                ><span><b>MIT licence.</b> Use it at work, fork it, sell it.</span>
+              </li>
+              <li>
+                <svg aria-hidden="true"><use href="#i-check" /></svg
+                ><span><b>One compose file.</b> Configured with environment variables.</span>
+              </li>
+              <li>
+                <svg aria-hidden="true"><use href="#i-check" /></svg
+                ><span><b>Your data.</b> On your servers, exportable at any time.</span>
+              </li>
+            </ul>
+            <div class="os-cta-row">
+              <a
+                class="os-button"
+                data-variant="primary"
+                href="https://github.com/openstuff-dev/open-usecase"
+                ><svg class="os-icon" aria-hidden="true"><use href="#i-github" /></svg>View on
+                GitHub</a
+              >
+              <a class="os-button" href="https://github.com/openstuff-dev/open-usecase#readme"
+                >Self-hosting guide</a
+              >
+            </div>
+          </div>
+          <div>
+            <div class="os-term">
+              <div class="os-term-bar">
+                <span class="os-term-dots" aria-hidden="true"><i></i><i></i><i></i></span
+                ><span class="os-term-title">terminal</span
+                ><button class="os-copy" type="button" data-copy="code-pull">
+                  <svg aria-hidden="true"><use href="#i-copy" /></svg><span>Copy</span>
+                </button>
+              </div>
+              <pre><code id="code-pull"><span class="os-c-mut">$ </span>git clone https://github.com/openstuff-dev/open-usecase
+<span class="os-c-mut">$ </span>cd open-usecase &amp;&amp; cp .env.example .env
+<span class="os-c-mut">$ </span>docker compose up --build</code></pre>
+            </div>
+            <div class="os-family">
+              <p>Part of the OpenStuff family: tools built on one shared toolkit.</p>
+              <div class="os-family-row">
+                <a href="https://github.com/openstuff-dev"
+                  ><svg class="os-mark" aria-hidden="true">
+                    <use href="assets/logo.svg#mark-openstuff" /></svg
+                  >OpenStuff</a
+                >
+                <a href="https://purpose.openstuff.dev" style="--os-mark-core: #2d5bff"
+                  ><svg class="os-mark" aria-hidden="true">
+                    <use href="assets/logo.svg#mark-open-purpose" /></svg
+                  >OpenPurpose</a
+                >
+                <a href="https://announce.openstuff.dev" style="--os-mark-core: #e8590c"
+                  ><svg class="os-mark" aria-hidden="true">
+                    <use href="assets/logo.svg#mark-open-announce" /></svg
+                  >OpenAnnounce</a
+                >
+                <a href="https://relay.openstuff.dev" style="--os-mark-core: #0d9488"
+                  ><svg class="os-mark" aria-hidden="true">
+                    <use href="assets/logo.svg#mark-open-relay" /></svg
+                  >OpenRelay</a
+                >
+                <a href="https://version.openstuff.dev" style="--os-mark-core: #c2255c"
+                  ><svg class="os-mark" aria-hidden="true">
+                    <use href="assets/logo.svg#mark-open-version" /></svg
+                  >OpenVersion</a
+                >
+                <span
+                  ><svg class="os-mark" aria-hidden="true">
+                    <use href="assets/logo.svg#mark-open-usecase" /></svg
+                  >OpenUsecase</span
+                >
+                <a href="https://design.openstuff.dev" style="--os-mark-core: #9442d9"
+                  ><svg class="os-mark" aria-hidden="true">
+                    <use href="assets/logo.svg#mark-openstuff-design" /></svg
+                  >OpenStuff Design</a
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. For teams -->
+      <section class="os-section" data-divider aria-labelledby="teams-title">
+        <div class="os-wrap">
+          <div class="os-section-head">
+            <span class="os-eyebrow">For teams and companies</span>
+            <h2 id="teams-title">Every product and agent, on one server.</h2>
+            <p class="os-lede">
+              Each team has its own projects, people and agents, kept apart from the other teams in
+              the database itself.
+            </p>
+          </div>
+          <div class="os-features">
+            <div>
+              <svg aria-hidden="true"><use href="#i-layers" /></svg>
+              <h3>Projects and areas</h3>
+              <p>A project can span several repositories, with its use cases grouped by area.</p>
+            </div>
+            <div>
+              <svg aria-hidden="true"><use href="#i-building" /></svg>
+              <h3>Teams</h3>
+              <p>Separate teams on one server, kept apart with Postgres row-level security.</p>
+            </div>
+            <div>
+              <svg aria-hidden="true"><use href="#i-shield" /></svg>
+              <h3>Agents can't raise their rights</h3>
+              <p>An agent can't manage tokens or permissions, not even its own.</p>
+            </div>
+            <div>
+              <svg aria-hidden="true"><use href="#i-users" /></svg>
+              <h3>Only people reject and retire</h3>
+              <p>
+                Admins manage the team. Members review. Agents and CI each have their own token.
+              </p>
+            </div>
+            <div>
+              <svg aria-hidden="true"><use href="#i-key" /></svg>
+              <h3>Tokens shown once</h3>
+              <p>Tokens are stored as hashes, and each one belongs to a single agent or CI job.</p>
+            </div>
+            <div>
+              <svg aria-hidden="true"><use href="#i-swap" /></svg>
+              <h3>Export and import</h3>
+              <p>Move a team's use cases, with their IDs and history, to another server.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 9. FAQ -->
+      <section class="os-section" data-divider aria-labelledby="faq-title">
+        <div class="os-wrap">
+          <div class="os-section-head" data-align="center">
+            <span class="os-eyebrow">FAQ</span>
+            <h2 id="faq-title">Questions people ask first</h2>
+          </div>
+          <div class="os-faq">
+            <details name="faq">
+              <summary>Is it free?</summary>
+              <div class="os-faq-answer">
+                <p>
+                  Yes. OpenUsecase is open source under the MIT licence, so self-hosting costs
+                  nothing but your server.
+                </p>
+              </div>
+            </details>
+            <details name="faq">
+              <summary>Can I self-host it?</summary>
+              <div class="os-faq-answer">
+                <p>
+                  Yes, and for now that's the only way to run it. Docker Compose starts the app and
+                  Postgres, configured with environment variables.
+                </p>
+              </div>
+            </details>
+            <details name="faq">
+              <summary>Where is my data?</summary>
+              <div class="os-faq-answer">
+                <p>
+                  In your own Postgres. CI reports are read and thrown away, and you can export a
+                  team's data at any time.
+                </p>
+              </div>
+            </details>
+            <details name="faq">
+              <summary>Does every change need a use case?</summary>
+              <div class="os-faq-answer">
+                <p>
+                  No, only changes a user can see. Refactors, dependency bumps and CI need none. If
+                  an agent is unsure, it asks.
+                </p>
+              </div>
+            </details>
+            <details name="faq">
+              <summary>Which agents does it work with?</summary>
+              <div class="os-faq-answer">
+                <p>
+                  Any agent that speaks MCP. So far, we've run it with Claude Code. Test results
+                  come in as JUnit XML, which most test runners can write.
+                </p>
+              </div>
+            </details>
+            <details name="faq">
+              <summary>Can an agent get around it?</summary>
+              <div class="os-faq-answer">
+                <p>
+                  The server can prove that an approving token didn't write the use case, but it
+                  can't see who holds a token. A sub-agent normally counts as its parent. For a real
+                  second opinion, run the reviewer in CI with a token the proposing agent can't
+                  read.
+                </p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10. Final call to action -->
+      <section class="os-section os-final" data-divider aria-labelledby="final-title">
+        <div class="os-wrap">
+          <h2 id="final-title">Agree on it before your agent builds it.</h2>
+          <p class="os-lede">Run it on your own server in five minutes.</p>
+          <div class="os-cta-row">
+            <a class="os-button" data-size="lg" data-variant="primary" href="#self-host"
+              >Self-host it <svg class="os-icon" aria-hidden="true"><use href="#i-arrow" /></svg
+            ></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="os-footer">
+      <div class="os-wrap">
+        <div>
+          <a
+            class="os-brand"
+            href="https://github.com/openstuff-dev"
+            aria-label="OpenStuff on GitHub"
+          >
+            <svg class="os-mark" aria-hidden="true">
+              <use href="assets/logo.svg#mark-openstuff" />
+            </svg>
+            <span class="os-wordmark" aria-hidden="true">Open<b>Stuff</b></span>
+          </a>
+          <small>Made by OpenStuff. OpenUsecase is released under the MIT licence.</small>
+        </div>
+        <nav aria-label="Footer">
+          <a href="https://github.com/openstuff-dev/open-usecase">GitHub</a>
+          <a href="https://design.openstuff.dev">Design</a>
+          <a href="https://github.com/openstuff-dev/open-usecase/blob/HEAD/LICENSE">Licence</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>
