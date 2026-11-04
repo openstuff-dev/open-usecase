@@ -2,6 +2,9 @@
 
 export type Role = 'admin' | 'member';
 
+/** How an agent's proposals get approved. An admin sets it, and an agent never can. */
+export type ReviewMode = 'human_approval' | 'agent_review' | 'auto_approve';
+
 export interface TeamRef {
   slug: string;
   name: string;
@@ -96,4 +99,62 @@ export interface InboxItem {
 
 export interface Inbox {
   items: InboxItem[];
+}
+
+export interface RepositorySettings {
+  id: string;
+  /** `github.com/acme/shop`. */
+  remote: string;
+  defaultBranch: string;
+}
+
+export interface ProjectSettings {
+  id: string;
+  slug: string;
+  name: string;
+  language: string;
+  repositories: RepositorySettings[];
+}
+
+export interface MemberSettings {
+  accountId: string;
+  email: string;
+  name: string;
+  role: Role;
+}
+
+export interface TokenSettings {
+  id: string;
+  /** The start of the token, so people can tell tokens apart. */
+  prefix: string;
+  createdAt: string;
+}
+
+export interface ActorSettings {
+  id: string;
+  name: string;
+  kind: 'agent' | 'ci';
+  review: ReviewMode;
+  canReview: boolean;
+  /** Tokens that still work. */
+  tokens: TokenSettings[];
+}
+
+export interface TeamSettings {
+  projects: ProjectSettings[];
+  members: MemberSettings[];
+  actors: ActorSettings[];
+}
+
+/** A token, shown once and never again. */
+export interface NewToken {
+  id: string;
+  token: string;
+  prefix: string;
+}
+
+export interface NewMemberResult {
+  accountId: string;
+  /** Set when a new account was made: shown once, for the admin to pass on. */
+  password: string | null;
 }

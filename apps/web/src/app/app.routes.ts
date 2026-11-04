@@ -29,6 +29,11 @@ export const routes: Routes = [
             loadComponent: () => import('./pages/inbox').then((m) => m.InboxPage),
             title: 'Inbox · OpenUsecase',
           },
+          {
+            path: 'settings',
+            loadComponent: () => import('./pages/settings').then((m) => m.SettingsPage),
+            title: 'Settings · OpenUsecase',
+          },
         ],
       },
     ],

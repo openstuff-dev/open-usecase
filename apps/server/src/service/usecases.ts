@@ -40,6 +40,26 @@ async function projectOfRemote(db: Client, remote: string): Promise<ProjectRow |
   return rows.at(0) ?? null;
 }
 
+/**
+ * What an agent's mode means when its revision arrives. `agent_review` needs the user's request
+ * word for word, so the reviewer can check the use case against it instead of against the proposer.
+ */
+function arrival(actor: Actor, originalRequest: string | null | undefined, ref: string) {
+  if (actor.review === 'agent_review' && !originalRequest?.trim()) {
+    throw new HttpError(
+      400,
+      `${ref} needs original_request, the user's request word for word: a reviewer agent checks against it.`,
+    );
+  }
+  const auto = actor.review === 'auto_approve';
+  return {
+    state: auto ? 'approved' : 'proposed',
+    mode: actor.review,
+    method: auto ? 'auto_approve' : null,
+    decidedBy: auto ? actor.id : null,
+  } as const;
+}
+
 const refOf = (number: number) => `UC-${String(number)}`;
 
 /** Joins a use case `u` to its latest revision and its live one. */
@@ -69,6 +89,7 @@ async function useCaseByRef(
   language: string;
   nextScenario: number;
   retired: boolean;
+  hasLive: boolean;
 } | null> {
   const number = REF.exec(ref)?.[1];
   const project = await projectOfRemote(db, remote);
@@ -78,8 +99,11 @@ async function useCaseByRef(
     number: number;
     nextScenario: number;
     retired: boolean;
+    hasLive: boolean;
   }>(
-    `SELECT id, number, next_scenario_number AS "nextScenario", retired_at IS NOT NULL AS retired
+    `SELECT id, number, next_scenario_number AS "nextScenario", retired_at IS NOT NULL AS retired,
+            EXISTS (SELECT 1 FROM revisions r WHERE r.use_case_id = use_cases.id AND r.state = 'live')
+              AS "hasLive"
        FROM use_cases
       WHERE project_id = $1 AND number = $2 FOR UPDATE`,
     [project.id, Number(number)],
@@ -100,6 +124,7 @@ export async function proposeUseCase(
       `The repository ${input.remote} isn't in this team. Ask a person to add it to a project.`,
     );
   }
+  const arrives = arrival(actor, input.originalRequest, 'A proposal');
   // Check the text before taking a number, so a refused proposal doesn't use one up.
   const { gherkin, scenarios, nextNumber } = tagged(() =>
     assignScenarioTags(input.gherkin, project.language, new Set(), 1),
@@ -122,8 +147,10 @@ export async function proposeUseCase(
   );
   await db.query(
     `INSERT INTO revisions
-       (team_id, use_case_id, number, gherkin, original_request, proposed_by, scenario_numbers)
-     VALUES ($1, $2, 1, $3, $4, $5, $6)`,
+       (team_id, use_case_id, number, gherkin, original_request, proposed_by, scenario_numbers,
+        state, review_mode, approval_method, decided_by, decided_at)
+     VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9::text, $10::uuid,
+             CASE WHEN $9::text IS NULL THEN NULL ELSE now() END)`,
     [
       actor.teamId,
       id,
@@ -131,12 +158,16 @@ export async function proposeUseCase(
       input.originalRequest ?? null,
       actor.id,
       scenarios.map((s) => s.number),
+      arrives.state,
+      arrives.mode,
+      arrives.method,
+      arrives.decidedBy,
     ],
   );
   return {
     id,
     ref: refOf(number),
-    status: 'proposed',
+    status: arrives.state,
     revision: 1,
     gherkin,
     scenarios: scenarios.map((s) => ({
@@ -186,6 +217,7 @@ export async function reviseUseCase(
       `${input.ref}'s latest revision is "${latest.state}". It can be revised only when changes are requested or it's done.`,
     );
   }
+  const arrives = arrival(actor, latest.originalRequest, input.ref);
   const known = await db.query<{ number: number }>(
     'SELECT number FROM scenarios WHERE use_case_id = $1',
     [useCase.id],
@@ -212,8 +244,9 @@ export async function reviseUseCase(
     // The request stays with every revision: the reviewer still checks against it.
     `INSERT INTO revisions
        (team_id, use_case_id, number, gherkin, what_changed, original_request, proposed_by,
-        scenario_numbers)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        scenario_numbers, state, review_mode, approval_method, decided_by, decided_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::text, $12::uuid,
+             CASE WHEN $11::text IS NULL THEN NULL ELSE now() END)`,
     [
       actor.teamId,
       useCase.id,
@@ -223,13 +256,17 @@ export async function reviseUseCase(
       latest.originalRequest,
       actor.id,
       scenarios.map((s) => s.number),
+      arrives.state,
+      arrives.mode,
+      arrives.method,
+      arrives.decidedBy,
     ],
   );
   const ref = refOf(useCase.number);
   return {
     id: useCase.id,
     ref,
-    status: 'proposed',
+    status: useCase.hasLive ? 'done' : arrives.state,
     revision,
     gherkin,
     scenarios: scenarios.map((s) => ({ id: `${ref}/S${String(s.number)}`, name: s.name })),
@@ -337,6 +374,47 @@ export async function rejectUseCase(
   const decided = await decide(db, actor, id, 'rejected');
   await addComment(db, actor, id, 'That use case', reason, undefined);
   return decided;
+}
+
+/**
+ * A reviewer agent decides on another agent's proposal. It needs reviewer rights, the proposal must
+ * have come in under `agent_review`, and it may not have written any revision of this use case, so
+ * a reworded revision can't turn into approving your own work.
+ */
+export async function reviewUseCase(
+  db: Client,
+  actor: Actor,
+  input: { remote: string; ref: string; decision: 'approve' | 'request_changes'; comment?: string | undefined },
+): Promise<{ status: UseCaseStatus }> {
+  if (!actor.canReview) {
+    throw new HttpError(403, "You don't have reviewer rights. An admin gives them in Settings.");
+  }
+  const useCase = await useCaseByRef(db, input.remote, input.ref);
+  if (!useCase) throw notFound(input.ref);
+  const { rows } = await db.query<{ wrote: boolean; mode: string | null }>(
+    `SELECT EXISTS (SELECT 1 FROM revisions WHERE use_case_id = $1 AND proposed_by = $2) AS wrote,
+            (SELECT review_mode FROM revisions WHERE use_case_id = $1 AND state = 'proposed') AS mode`,
+    [useCase.id, actor.id],
+  );
+  const { wrote, mode } = rows[0] ?? { wrote: false, mode: null };
+  if (wrote) throw new HttpError(403, `You wrote a revision of ${input.ref}, so you can't review it.`);
+  if (!mode) throw new HttpError(409, `${input.ref} isn't waiting for review.`);
+  if (mode !== 'agent_review') {
+    throw new HttpError(403, `${input.ref} waits for a person. An agent can't approve it.`);
+  }
+  if (input.decision === 'request_changes' && !input.comment?.trim()) {
+    throw new HttpError(400, 'Say what should change.');
+  }
+  await db.query(
+    `UPDATE revisions SET state = $2, decided_by = $3, decided_at = now(),
+            approval_method = CASE WHEN $2 = 'approved' THEN 'agent_review' END
+      WHERE use_case_id = $1 AND state = 'proposed'`,
+    [useCase.id, input.decision === 'approve' ? 'approved' : 'changes_requested', actor.id],
+  );
+  if (input.comment?.trim()) {
+    await addComment(db, actor, useCase.id, input.ref, input.comment.trim(), undefined);
+  }
+  return { status: await statusOf(db, useCase.id) };
 }
 
 /** An agent asks for retirement. It only files the request: a person decides, whatever the mode. */
@@ -511,7 +589,7 @@ export async function loadInbox(db: Client): Promise<Inbox> {
        JOIN LATERAL (
          SELECT * FROM revisions rv
           WHERE rv.use_case_id = u.id
-            AND (rv.state = 'proposed'
+            AND ((rv.state = 'proposed' AND rv.review_mode = 'human_approval')
                  OR (rv.state = 'live' AND u.retirement_requested_at IS NOT NULL))
           ORDER BY rv.state = 'proposed' DESC, rv.number DESC LIMIT 1
        ) r ON true

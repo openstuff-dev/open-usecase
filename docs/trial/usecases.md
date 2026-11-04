@@ -165,11 +165,11 @@ Feature: An agent waits for approval
 ## Found while building task 1
 
 Uncovered behaviour, asked under the "always ask" rule. The user decided on 2026-11-04 not to build
-it with the trial, which keeps using `npm run -w apps/server trial:setup`.
+it with the trial. It was built in stage B.
 
 ### UC-6: A person sets up a team
 
-Status: proposed, not built in the trial (the user's decision, 2026-11-04)
+Status: proposed, built
 
 ```gherkin
 Feature: A person sets up a team
@@ -438,5 +438,66 @@ Feature: A doubt doesn't get lost when approving
     Given I approved a revision without comments
     When the agent reads the use case
     Then it isn't told to raise anything
+```
+
+### UC-14: Agent review modes
+
+Status: proposed, built
+
+```gherkin
+Feature: Agent review modes
+
+  @S1
+  Scenario: A person approves by default
+    Given an agent has the mode "a person approves"
+    When it proposes a use case
+    Then a person reviews it in the inbox
+    And a reviewer agent can't approve it
+
+  @S2
+  Scenario: A reviewer agent approves
+    Given an agent has the mode "a reviewer agent approves"
+    When it proposes a use case and a different agent with reviewer rights approves it
+    Then it is approved
+    And the use case records that an agent approved it
+
+  @S3
+  Scenario: A reviewer needs the user's request
+    Given an agent has the mode "a reviewer agent approves"
+    When it proposes without the user's request word for word
+    Then the proposal is refused
+
+  @S4
+  Scenario: No approving your own work
+    Given an agent wrote any revision of a use case
+    When it tries to review that use case
+    Then it is refused, even if another agent's revision came in between
+
+  @S5
+  Scenario: Reviewing needs rights and reasons
+    Given an agent without reviewer rights
+    When it tries to review
+    Then it is refused
+    And a reviewer asking for changes has to say what should change
+
+  @S6
+  Scenario: Approved on arrival
+    Given an agent has the mode "approved on arrival"
+    When it proposes a use case
+    Then it is approved without review
+    And the record says nobody checked it
+    And the agent is told this doesn't widen its task
+
+  @S7
+  Scenario: Retiring always needs a person
+    Given an agent has the mode "approved on arrival"
+    When it asks to retire a done use case
+    Then it stays done until a person decides
+
+  @S8
+  Scenario: An agent can't change its own mode
+    Given I am an agent
+    When I try to change my review mode
+    Then I am refused with a 403
 ```
 

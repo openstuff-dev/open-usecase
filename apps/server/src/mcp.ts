@@ -9,6 +9,7 @@ import {
   proposeUseCase,
   readUseCase,
   requestRetirement,
+  reviewUseCase,
   reviseUseCase,
   searchUseCases,
   type ProposeResult,
@@ -24,7 +25,7 @@ Before you build:
 3. If none does, write one and call propose_usecase. Describe behaviour, not implementation, and keep to about seven scenarios. Send the user's request word for word as original_request.
 
 While it waits:
-4. If it isn't approved on arrival, end your turn and tell the user it's waiting in the inbox. Don't keep checking its status, and don't start building, not even the parts you're sure about.
+4. If it isn't approved on arrival, end your turn and tell the user it's waiting for review. Don't keep checking its status, and don't start building, not even the parts you're sure about. If it was approved on arrival, that still covers only what the user asked for: it doesn't let you widen the task.
 
 When the user comes back:
 5. Call get_usecase once. Build only if the status is approved. If changes were requested, read the comments, call revise_usecase, and end your turn again. If it was rejected, tell the user why and don't build it.
@@ -53,7 +54,9 @@ const describeResult = (result: ProposeResult, verb: string) =>
     `${verb} ${result.ref} (revision ${String(result.revision)}). Status: ${result.status}.`,
     ...result.scenarios.map((s) => `- ${s.id}: ${s.name}`),
     '',
-    'It is not approved yet. Do not build it. End your turn and tell the user it is waiting in the inbox.',
+    result.status === 'approved'
+      ? 'It was approved on arrival, without review, because of your review mode. You may build it. That does not widen your task: it covers only what the user asked for.'
+      : 'It is not approved yet. Do not build it. End your turn and tell the user it is waiting for review.',
     '',
     result.gherkin,
   ].join('\n');
@@ -207,6 +210,30 @@ export function createMcpServer(pool: Pool, actor: Actor, version: string): McpS
           scenario: input.scenario,
         });
         return answer(`Commented on ${input.id}.`);
+      }),
+  );
+
+  server.registerTool(
+    'review_usecase',
+    {
+      description:
+        "Reviewer agents only: approve another agent's proposal or ask for changes. Check it against the user's original request, not against what the proposer says. You can't review a use case you wrote any revision of.",
+      inputSchema: {
+        remote,
+        id: ref,
+        decision: z.enum(['approve', 'request_changes']),
+        comment: z.string().trim().max(10_000).optional().describe('Required when asking for changes'),
+      },
+    },
+    (input) =>
+      run(async (db) => {
+        const { status } = await reviewUseCase(db, actor, {
+          remote: input.remote,
+          ref: input.id,
+          decision: input.decision,
+          comment: input.comment,
+        });
+        return answer(`${input.id} is now ${status}.`);
       }),
   );
 

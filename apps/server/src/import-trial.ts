@@ -53,7 +53,13 @@ try {
       const inserted = await db.query<{ id: string }>(
         `INSERT INTO use_cases (team_id, project_id, number, title, next_scenario_number)
          VALUES ($1, $2, $3, $4, $5) ON CONFLICT (project_id, number) DO NOTHING RETURNING id`,
-        [target.teamId, target.projectId, useCase.number, useCase.title, Math.max(0, ...numbers) + 1],
+        [
+          target.teamId,
+          target.projectId,
+          useCase.number,
+          useCase.title,
+          Math.max(0, ...numbers) + 1,
+        ],
       );
       const id = inserted.rows.at(0)?.id;
       if (!id) continue;

@@ -16,6 +16,7 @@ import {
   iconChevrons,
   iconInbox,
   iconMenu,
+  iconSettings,
   iconSignOut,
 } from './shared/icons';
 
@@ -136,6 +137,19 @@ export function initials(name: string): string {
         }
 
         <div class="rail-foot">
+          @if (session.isAdmin() && team(); as n) {
+            <ul>
+              <li>
+                <a
+                  [routerLink]="['/t', n, 'settings']"
+                  routerLinkActive="active"
+                  ariaCurrentWhenActive="page"
+                >
+                  <svg os-icon [icon]="icons.settings" size="sm"></svg>Settings
+                </a>
+              </li>
+            </ul>
+          }
           @if (me(); as me) {
             <div class="me-row">
               <span class="avatar" aria-hidden="true">{{ initials(me.name || me.email) }}</span>
@@ -401,6 +415,7 @@ export class Shell {
     check: iconCheck,
     chevrons: iconChevrons,
     menu: iconMenu,
+    settings: iconSettings,
     signOut: iconSignOut,
   };
 

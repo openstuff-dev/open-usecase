@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import pg from 'pg';
 import { z } from 'zod';
-import type { Me, Role } from '@open-usecase/contracts';
+import type { Me, ReviewMode, Role } from '@open-usecase/contracts';
 import type { Config } from './config.js';
 import { queryAcrossTeams, type Client, type Pool } from './db.js';
 import { HttpError } from './errors.js';
@@ -68,6 +68,8 @@ export interface Actor {
   teamId: string;
   name: string;
   kind: 'human' | 'agent' | 'ci';
+  review: ReviewMode;
+  canReview: boolean;
 }
 
 /** The actor behind a token, or null if it's unknown or revoked. */
@@ -75,7 +77,7 @@ export async function actorFromToken(pool: Pool, token: string | undefined): Pro
   if (!token) return null;
   const rows = await queryAcrossTeams<Actor>(
     pool,
-    `SELECT a.id, a.team_id AS "teamId", a.name, a.kind
+    `SELECT a.id, a.team_id AS "teamId", a.name, a.kind, a.review, a.can_review AS "canReview"
        FROM api_tokens t JOIN actors a ON a.id = t.actor_id
       WHERE t.token_hash = ${pg.escapeLiteral(sha256(token))} AND t.revoked_at IS NULL`,
   );
@@ -260,5 +262,12 @@ export async function personActor(db: Client, access: TeamAccess): Promise<Actor
      RETURNING id`,
     [teamId, account.name || account.email, account.id],
   );
-  return { id: rows[0]?.id ?? '', teamId, name: account.name || account.email, kind: 'human' };
+  return {
+    id: rows[0]?.id ?? '',
+    teamId,
+    name: account.name || account.email,
+    kind: 'human',
+    review: 'human_approval',
+    canReview: false,
+  };
 }

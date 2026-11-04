@@ -10,6 +10,7 @@ import { registerIdempotency } from './idempotency.js';
 import { createMcpServer } from './mcp.js';
 import { registerActorRoutes } from './routes/actors.js';
 import { registerReviewRoutes } from './routes/review.js';
+import { registerSettingsRoutes } from './routes/settings.js';
 
 const VERSION = '0.0.0';
 
@@ -33,6 +34,7 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
   registerIdempotency(app);
   registerReviewRoutes(app, pool);
   registerActorRoutes(app, pool);
+  registerSettingsRoutes(app, pool);
 
   // MCP over stateless Streamable HTTP: a new server per request, as in OpenPurpose.
   app.post('/mcp', async (request, reply) => {

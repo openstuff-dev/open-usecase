@@ -4,8 +4,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Inbox, InboxItem } from '@open-usecase/contracts';
+import type { Inbox, InboxItem, TeamSettings } from '@open-usecase/contracts';
 import { buildApp } from '../src/app.js';
+import { hashPassword } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { createPool, migrate, type Pool, withScope } from '../src/db.js';
 import { addMember, createAgent, createProject, createTeam } from '../src/service/setup.js';
@@ -125,6 +126,11 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     await addMember(pool, a, { email: 'mia@acme.test', name: 'Mia', password: 'mia-password', role: 'member' });
     await addMember(pool, a, { email: 'ada@acme.test', name: 'Ada', password: 'ada-password', role: 'admin' });
     await addMember(pool, b, { email: 'bo@bravo.test', name: 'Bo', password: 'bo-password', role: 'member' });
+    await pool.query(
+      `INSERT INTO accounts (email, name, password_hash, is_server_admin)
+       VALUES ('root@server.test', 'Root', $1, true)`,
+      [await hashPassword('root-password')],
+    );
     agentA = await createAgent(pool, a, 'Agent A');
     agentA2 = await createAgent(pool, a, 'Agent A2');
     agentB = await createAgent(pool, b, 'Agent B');
@@ -565,6 +571,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         'get_usecase',
         'propose_usecase',
         'request_retirement',
+        'review_usecase',
         'revise_usecase',
         'search_usecases',
       ]);
@@ -884,6 +891,240 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const ref = await propose();
       await post(`${(await inboxItem(ref)).id}/approve`);
       expect((await get(ref)).text).not.toContain('left comments');
+    });
+  });
+
+  describe('UC-14: agent review modes', () => {
+    const setMode = (actorId: string, body: object) =>
+      http({ cookie: adminA }, 'PATCH', `/api/t/acme/actors/${actorId}`, body);
+    const review = (token: string, ref: string, decision: string, comment?: string) =>
+      call(token, 'review_usecase', { remote: REMOTE_A, id: ref, decision, ...(comment ? { comment } : {}) });
+    const method = (ref: string) =>
+      withScope(pool, { bypass: true }, async (db) => {
+        const { rows } = await db.query<{ approval_method: string | null; state: string }>(
+          `SELECT r.approval_method, r.state FROM revisions r JOIN use_cases u ON u.id = r.use_case_id
+            WHERE u.number = $1 AND u.team_id = (SELECT id FROM teams WHERE slug = 'acme')
+            ORDER BY r.number DESC LIMIT 1`,
+          [Number(ref.slice(3))],
+        );
+        return must(rows[0]);
+      });
+    const fresh = async (name: string) => {
+      const { rows } = await pool.query<{ id: string }>(`SELECT id FROM teams WHERE slug = 'acme'`);
+      return createAgent(pool, must(rows[0]).id, name);
+    };
+
+    it('UC-14/S1 with human_approval, a person approves, and a reviewer agent can not', async () => {
+      const reviewer = await fresh('Reviewer one');
+      await setMode(reviewer.actorId, { canReview: true });
+      const ref = await propose();
+      expect((await inboxItem(ref)).needsReview).toBe(true);
+      const answer = await review(reviewer.token, ref, 'approve');
+      expect(answer.text).toContain('waits for a person');
+      expect(await method(ref)).toMatchObject({ state: 'proposed', approval_method: null });
+    });
+
+    it('UC-14/S2 with agent_review, a different reviewer approves, and the record says so', async () => {
+      const proposer = await fresh('Proposer two');
+      const reviewer = await fresh('Reviewer two');
+      await setMode(proposer.actorId, { review: 'agent_review' });
+      await setMode(reviewer.actorId, { canReview: true });
+      const ref = await propose(GHERKIN, proposer.token);
+      expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
+      const answer = await review(reviewer.token, ref, 'approve');
+      expect(answer.text).toBe(`${ref} is now approved.`);
+      expect(await method(ref)).toEqual({ state: 'approved', approval_method: 'agent_review' });
+    });
+
+    it('UC-14/S3 agent_review refuses a proposal without the user request', async () => {
+      const proposer = await fresh('Proposer three');
+      await setMode(proposer.actorId, { review: 'agent_review' });
+      const before = await useCaseCount();
+      const answer = await call(proposer.token, 'propose_usecase', {
+        remote: REMOTE_A,
+        title: 'No request',
+        gherkin: GHERKIN,
+      });
+      expect(answer).toMatchObject({ isError: true });
+      expect(answer.text).toContain('original_request');
+      expect(await useCaseCount()).toBe(before);
+    });
+
+    it('UC-14/S4 an agent can not approve its own proposal, also through a reworded revision', async () => {
+      const proposer = await fresh('Proposer four');
+      const other = await fresh('Reviewer four');
+      await setMode(proposer.actorId, { review: 'agent_review', canReview: true });
+      await setMode(other.actorId, { canReview: true });
+
+      const ref = await propose(GHERKIN, proposer.token);
+      expect((await review(proposer.token, ref, 'approve')).text).toContain("can't review it");
+
+      await review(other.token, ref, 'request_changes', 'Say more.');
+      await call(proposer.token, 'revise_usecase', {
+        remote: REMOTE_A,
+        id: ref,
+        what_changed: 'Said more.',
+        gherkin: GHERKIN.replace('Change it', 'Change it now'),
+      });
+      expect((await review(proposer.token, ref, 'approve')).text).toContain("can't review it");
+      expect(await method(ref)).toMatchObject({ state: 'proposed' });
+    });
+
+    it('UC-14/S5 reviewing needs reviewer rights, and asking for changes needs a comment', async () => {
+      const proposer = await fresh('Proposer five');
+      const other = await fresh('Reviewer five');
+      await setMode(proposer.actorId, { review: 'agent_review' });
+      const ref = await propose(GHERKIN, proposer.token);
+      expect((await review(other.token, ref, 'approve')).text).toContain('reviewer rights');
+      await setMode(other.actorId, { canReview: true });
+      expect((await review(other.token, ref, 'request_changes')).text).toContain('what should change');
+    });
+
+    it('UC-14/S6 auto_approve approves on arrival, and the record says nobody checked', async () => {
+      const proposer = await fresh('Proposer six');
+      await setMode(proposer.actorId, { review: 'auto_approve' });
+      const { text } = await call(proposer.token, 'propose_usecase', {
+        remote: REMOTE_A,
+        title: 'Auto',
+        gherkin: GHERKIN,
+      });
+      expect(text).toContain('Status: approved.');
+      expect(text).toContain('does not widen your task');
+      const ref = must(/UC-\d+/.exec(text)?.[0]);
+      expect(await method(ref)).toEqual({ state: 'approved', approval_method: 'auto_approve' });
+      expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
+    });
+
+    it('UC-14/S7 auto_approve still can not retire: the request waits for a person', async () => {
+      const proposer = await fresh('Proposer seven');
+      await setMode(proposer.actorId, { review: 'auto_approve' });
+      const { text } = await call(proposer.token, 'propose_usecase', {
+        remote: REMOTE_A,
+        title: 'Auto',
+        gherkin: GHERKIN,
+      });
+      const ref = must(/UC-\d+/.exec(text)?.[0]);
+      await withScope(pool, { bypass: true }, (db) =>
+        db.query(
+          `UPDATE revisions SET state = 'live' WHERE state = 'approved' AND use_case_id =
+            (SELECT id FROM use_cases WHERE number = $1 AND team_id = (SELECT id FROM teams WHERE slug = 'acme'))`,
+          [Number(ref.slice(3))],
+        ),
+      );
+      await call(proposer.token, 'request_retirement', { remote: REMOTE_A, id: ref, reason: 'Gone.' });
+      const read = await call(proposer.token, 'get_usecase', { remote: REMOTE_A, id: ref });
+      expect(read.text).toContain('Status: done.');
+      expect((await inboxItem(ref)).retirement).toMatchObject({ reason: 'Gone.' });
+    });
+
+    it('UC-14/S8 an agent gets a 403 when it tries to change its own mode', async () => {
+      const proposer = await fresh('Proposer eight');
+      const response = await http(
+        { token: proposer.token },
+        'PATCH',
+        `/api/t/acme/actors/${proposer.actorId}`,
+        { review: 'auto_approve' },
+      );
+      expect(response.statusCode).toBe(403);
+    });
+  });
+
+  describe('UC-6: a person sets up a team', () => {
+    const admin = (method: string, path: string, payload?: object) =>
+      http({ cookie: adminA }, method, `/api/t/acme${path}`, payload);
+
+    it('UC-6/S1 an admin adds a project and a repository, and agents propose into it', async () => {
+      const remote = 'https://github.com/acme/settings-site.git';
+      const response = await admin('POST', '/projects', { name: 'Settings site', remote });
+      expect(response.statusCode).toBe(201);
+      const { text, isError } = await call(agentA.token, 'propose_usecase', {
+        remote,
+        title: 'Works',
+        gherkin: GHERKIN,
+      });
+      expect(isError, text).toBe(false);
+      expect(text).toContain('UC-1 ');
+
+      const projectId = response.json<{ id: string }>().id;
+      const second = await admin('POST', `/projects/${projectId}/repositories`, {
+        remote: 'git@github.com:acme/settings-api.git',
+        defaultBranch: 'trunk',
+      });
+      expect(second.statusCode).toBe(201);
+      const settings = (await admin('GET', '/settings')).json<TeamSettings>();
+      expect(settings.projects.find((p) => p.id === projectId)?.repositories).toMatchObject([
+        { remote: 'github.com/acme/settings-api', defaultBranch: 'trunk' },
+        { remote: 'github.com/acme/settings-site', defaultBranch: 'main' },
+      ]);
+    });
+
+    it('UC-6/S1 a bad remote or an unknown Gherkin language is refused', async () => {
+      expect((await admin('POST', '/projects', { name: 'X', remote: 'nonsense' })).statusCode).toBe(400);
+      expect(
+        (await admin('POST', '/projects', { name: 'Y', remote: 'https://github.com/a/y.git', language: 'xx' }))
+          .statusCode,
+      ).toBe(400);
+    });
+
+    it('UC-6/S2 an admin adds an agent, and sees its token once', async () => {
+      const response = await admin('POST', '/actors', { name: 'New agent', kind: 'agent' });
+      expect(response.statusCode).toBe(201);
+      const { token, actorId } = response.json<{ token: string; actorId: string }>();
+      expect((await call(token, 'search_usecases', { query: 'colour' })).isError).toBe(false);
+      const settings = (await admin('GET', '/settings')).body;
+      expect(settings).toContain(actorId);
+      expect(settings).not.toContain(token);
+    });
+
+    it('UC-6/S3 revoking a token stops it working', async () => {
+      const { token, actorId } = (await admin('POST', '/actors', { name: 'Short lived', kind: 'agent' }))
+        .json<{ token: string; actorId: string }>();
+      const settings = (await admin('GET', '/settings')).json<TeamSettings>();
+      const tokenId = must(settings.actors.find((a) => a.id === actorId)?.tokens[0]).id;
+      expect((await admin('DELETE', `/tokens/${tokenId}`)).statusCode).toBe(200);
+      const refused = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(refused.status).toBe(401);
+    });
+
+    it('UC-6/S4 a server admin adds a team and a member, who can sign in and see the inbox', async () => {
+      const serverAdmin = await signIn('root@server.test', 'root-password');
+      const created = await http({ cookie: serverAdmin }, 'POST', '/api/admin/teams', { name: 'New Co' });
+      expect(created.statusCode).toBe(201);
+      const { slug } = created.json<{ slug: string }>();
+      expect(slug).toBe('new-co');
+      const added = await http({ cookie: serverAdmin }, 'POST', `/api/t/${slug}/members`, {
+        email: 'nora@newco.test',
+        name: 'Nora',
+        role: 'member',
+      });
+      expect(added.statusCode).toBe(201);
+      const { password } = added.json<{ password: string }>();
+      const nora = await signIn('nora@newco.test', password);
+      expect((await inbox(nora, slug))).toEqual([]);
+    });
+
+    it('UC-6/S4 only a server admin adds teams, and only a team admin reaches settings', async () => {
+      expect((await http({ cookie: adminA }, 'POST', '/api/admin/teams', { name: 'Nope' })).statusCode).toBe(403);
+      expect((await http({ cookie: memberA }, 'GET', '/api/t/acme/settings')).statusCode).toBe(403);
+      expect((await http({ token: agentA.token }, 'GET', '/api/t/acme/settings')).statusCode).toBe(403);
+    });
+
+    it('UC-6/S4 an admin changes a role and removes a member, but not themselves', async () => {
+      const { accountId } = (await admin('POST', '/members', {
+        email: 'temp@acme.test',
+        name: 'Temp',
+        role: 'member',
+      })).json<{ accountId: string }>();
+      expect((await admin('PATCH', `/members/${accountId}`, { role: 'admin' })).statusCode).toBe(200);
+      const settings = (await admin('GET', '/settings')).json<TeamSettings>();
+      expect(settings.members.find((m) => m.accountId === accountId)?.role).toBe('admin');
+      expect((await admin('DELETE', `/members/${accountId}`)).statusCode).toBe(200);
+      const self = settings.members.find((m) => m.email === 'ada@acme.test');
+      expect((await admin('DELETE', `/members/${must(self).accountId}`)).statusCode).toBe(409);
     });
   });
 });
