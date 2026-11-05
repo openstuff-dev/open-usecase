@@ -50,6 +50,9 @@ jobs:
       - run: npx nx run-many -t test --skip-nx-cache -- --reporter=default --reporter=junit --outputFile.junit=test-results.xml
         continue-on-error: true
 
+      # This repository holds the command itself, so it has to be built: npx would find the unbuilt one.
+      - run: npx nx run usecase:build
+
       - name: Report the results
         env:
           OPENUSECASE_URL: ${{ vars.OPENUSECASE_URL }}
@@ -57,5 +60,5 @@ jobs:
         run: |
           shopt -s nullglob
           for file in apps/*/test-results.xml packages/*/test-results.xml; do
-            npx --yes @openstuff-dev/usecase report --suite "$(basename "$(dirname "$file")")" "$file"
+            node packages/usecase/dist/index.js report --suite "$(basename "$(dirname "$file")")" "$file"
           done
