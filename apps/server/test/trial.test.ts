@@ -1659,7 +1659,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(useCase.comments[0]).toMatchObject({ scenario: 1, body: 'Fine.' });
       expect(response.body).not.toContain(agentA.token);
       expect(response.body).not.toMatch(/token_hash|password|scrypt/);
-      // A server-wide connection, with its public key and sealed deploy token, stays out of exports.
+      // A server connection, its public key and sealed token stay out of exports.
       await withScope(pool, { bypass: true }, (db) =>
         db.query(
           `INSERT INTO server_integrations (kind, url, public_key, deploy_token_sealed)
