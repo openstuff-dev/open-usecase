@@ -139,19 +139,17 @@ export function initials(name: string): string {
         }
 
         <div class="rail-foot">
-          @if (session.isAdmin() && team(); as n) {
-            <ul>
-              <li>
-                <a
-                  [routerLink]="['/t', n, 'settings']"
-                  routerLinkActive="active"
-                  ariaCurrentWhenActive="page"
-                >
-                  <svg os-icon [icon]="icons.settings" size="sm"></svg>Settings
-                </a>
-              </li>
-            </ul>
-          }
+          <ul>
+            <li>
+              <a
+                [routerLink]="settingsLink()"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+              >
+                <svg os-icon [icon]="icons.settings" size="sm"></svg>Settings
+              </a>
+            </li>
+          </ul>
           @if (me(); as me) {
             <div class="me-row">
               <span class="avatar" aria-hidden="true">{{ initials(me.name || me.email) }}</span>
@@ -410,6 +408,12 @@ export class Shell {
   private readonly router = inject(Router);
   protected readonly me = this.session.me;
   protected readonly team = this.session.team;
+  /** Settings for the team in view, or the account's outside a team. Every member has them. */
+  protected readonly settingsLink = computed(() => {
+    const team = this.session.team();
+    return team ? ['/t', team, 'settings'] : ['/settings'];
+  });
+
   protected readonly menuOpen = signal(false);
   protected readonly roleLabels = ROLE_LABELS;
   protected readonly initials = initials;
