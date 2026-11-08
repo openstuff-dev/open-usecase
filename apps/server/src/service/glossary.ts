@@ -1,8 +1,8 @@
 import type { Glossary, GlossaryTerm } from '@open-usecase/contracts';
-import type { Vault } from '../crypto.js';
+import type { Vault } from '@openstuff-dev/server';
 import type { Client } from '../db.js';
 import { HttpError } from '../errors.js';
-import { type FetchPolicy, FetchRefused, safeFetch } from '../safe-fetch.js';
+import { type FetchPolicy, FetchRefused, safeFetch } from '@openstuff-dev/server';
 
 /** The part of OpenPurpose's `POST /api/context` answer this needs: its layers, general first. */
 interface ContextAnswer {

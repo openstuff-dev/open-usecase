@@ -3,12 +3,12 @@ import fastifyStatic from '@fastify/static';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { actorFromToken, bearer, registerAuth } from './auth.js';
-import { type Config } from './config.js';
+import { type Config, policyFrom } from './config.js';
 import { withScope, type Pool } from './db.js';
 import { registerErrorHandler } from './errors.js';
 import { registerIdempotency } from './idempotency.js';
 import { createMcpServer } from './mcp.js';
-import { loadVault } from './crypto.js';
+import { loadVault } from '@openstuff-dev/server';
 import { registerActorRoutes } from './routes/actors.js';
 import { registerGlossaryRoutes } from './routes/glossary.js';
 import { registerCatalogueRoutes } from './routes/catalogue.js';
@@ -17,7 +17,6 @@ import { registerServerIntegrationRoutes } from './routes/server-integrations.js
 import { connectionFor, publishOwnVersion } from './service/openversion.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerV1Routes } from './routes/v1.js';
-import { policyFrom } from './safe-fetch.js';
 import { GlossaryReader } from './service/glossary.js';
 
 /** One read per MCP request, because the instructions depend on it. */
@@ -50,7 +49,11 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
   registerActorRoutes(app, pool);
   registerSettingsRoutes(app, pool);
   registerV1Routes(app, pool, config);
-  const vault = await loadVault(pool, config, app.log);
+  const vault = await loadVault(pool, {
+    secret: config.secretKey,
+    envName: 'OPENUSECASE_SECRET_KEY',
+    log: app.log,
+  });
   registerServerIntegrationRoutes(app, pool, config, policyFrom(config), vault);
   // After the server is listening, publish this image's version if OpenVersion is connected. Never
   // blocks startup and never fails it.
