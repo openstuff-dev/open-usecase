@@ -110,6 +110,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: VERSION=${{ github.ref_type == 'tag' && substring(github.ref_name, 1) || '' }}
           cache-from: type=gha
 
   # Hands a release (not a pre-release, not :edge) to a hosted instance: sets the new version in

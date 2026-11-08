@@ -132,6 +132,10 @@ Set these in the environment, or in `.env` with Docker. Each has a default.
 | `OPENUSECASE_SECRET_KEY` | none | Encrypts the OpenPurpose token. Without it, a key is made and kept in the database |
 | `OPENUSECASE_FETCH` | `public` | `private` lets this server call internal addresses, such as an OpenPurpose on your network |
 | `OPENUSECASE_FETCH_ALLOW` | none | With `private`: only these hosts, comma-separated |
+| `OPENUSECASE_OPENVERSION_URL` | none | The server-wide OpenVersion address. Set it, with the two below, and the Integrations tab shows it read-only |
+| `OPENUSECASE_OPENVERSION_PUBLIC_KEY` | none | The OpenVersion public key (`pk_…`) for the same connection |
+| `OPENUSECASE_OPENVERSION_DEPLOY_TOKEN` | none | Lets this server test the connection, and publish its own version (`OPENUSECASE_VERSION`) on start. Keep it secret |
+| `OPENUSECASE_VERSION` | `0.0.0` | Set by the image build from the release tag. At `0.0.0` (a local build), nothing is published |
 
 ## Your glossary
 

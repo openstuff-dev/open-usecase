@@ -13,12 +13,12 @@ import { registerActorRoutes } from './routes/actors.js';
 import { registerGlossaryRoutes } from './routes/glossary.js';
 import { registerCatalogueRoutes } from './routes/catalogue.js';
 import { registerReviewRoutes } from './routes/review.js';
+import { registerServerIntegrationRoutes } from './routes/server-integrations.js';
+import { connectionFor, publishOwnVersion } from './service/openversion.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerV1Routes } from './routes/v1.js';
 import { policyFrom } from './safe-fetch.js';
 import { GlossaryReader } from './service/glossary.js';
-
-const VERSION = '0.0.0';
 
 /** One read per MCP request, because the instructions depend on it. */
 async function hasGlossary(pool: Pool, teamId: string): Promise<boolean> {
@@ -51,6 +51,21 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
   registerSettingsRoutes(app, pool);
   registerV1Routes(app, pool, config);
   const vault = await loadVault(pool, config, app.log);
+  registerServerIntegrationRoutes(app, pool, config, policyFrom(config), vault);
+  // After the server is listening, publish this image's version if OpenVersion is connected. Never
+  // blocks startup and never fails it.
+  // Not awaited, so listening never waits for OpenVersion.
+  app.addHook('onListen', () => {
+    const publish = async () => {
+      const connection = await connectionFor(pool, config, vault);
+      if (connection) {
+        await publishOwnVersion(policyFrom(config), connection, config.version, app.log);
+      }
+    };
+    publish().catch((error: unknown) => {
+      app.log.warn({ err: (error as Error).message }, 'Skipped publishing this version.');
+    });
+  });
   const glossary = new GlossaryReader(policyFrom(config), vault);
   registerGlossaryRoutes(app, pool, glossary, vault, policyFrom(config));
 
@@ -60,7 +75,7 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
     if (!actor) return refuseMcp(reply, 401, 'That token is missing, unknown or revoked.');
     if (actor.kind !== 'agent') return refuseMcp(reply, 403, 'Only agents can use MCP.');
     const linked = await hasGlossary(pool, actor.teamId);
-    const server = createMcpServer(pool, actor, VERSION, glossary, linked);
+    const server = createMcpServer(pool, actor, config.version, glossary, linked);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
