@@ -18,6 +18,18 @@ export interface Config {
   reportMaxBytes: number;
   /** Encrypts the OpenPurpose token. Without it, a key is made and kept in the database. */
   secretKey: string | undefined;
+  /**
+   * A server-wide OpenVersion connection from the environment. When the URL and public key are
+   * both set, they win over the one saved in the Integrations tab, which then shows read-only.
+   * The deploy token also lets this server publish its own version on start.
+   */
+  openVersion: {
+    url: string | undefined;
+    publicKey: string | undefined;
+    deployToken: string | undefined;
+  };
+  /** This image's version, set from the image tag at build time. `0.0.0` for a local build. */
+  version: string;
   /** `private` lets this server call internal addresses, such as an OpenPurpose on your network. */
   fetch: 'public' | 'private';
   /** With `private`: only these hosts. Empty means any. */
@@ -39,6 +51,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: trust === 'true' ? true : trust || false,
     reportMaxBytes: Number(env.OPENUSECASE_REPORT_MAX_BYTES ?? 20 * 1024 * 1024),
     secretKey: env.OPENUSECASE_SECRET_KEY || undefined,
+    openVersion: {
+      url: env.OPENUSECASE_OPENVERSION_URL?.replace(/\/$/, '') || undefined,
+      publicKey: env.OPENUSECASE_OPENVERSION_PUBLIC_KEY || undefined,
+      deployToken: env.OPENUSECASE_OPENVERSION_DEPLOY_TOKEN || undefined,
+    },
+    version: env.OPENUSECASE_VERSION || '0.0.0',
     fetch: env.OPENUSECASE_FETCH === 'private' ? 'private' : 'public',
     fetchAllow: (env.OPENUSECASE_FETCH_ALLOW ?? '')
       .split(',')

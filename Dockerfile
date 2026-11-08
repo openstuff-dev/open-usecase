@@ -29,9 +29,11 @@ FROM manifests AS server-deps
 RUN npm ci -w apps/server --omit=dev && mkdir -p apps/server/node_modules
 
 FROM node:24-alpine
+ARG VERSION=
 ENV NODE_ENV=production \
     PORT=8080 \
-    WEB_DIR=/app/web
+    WEB_DIR=/app/web \
+    OPENUSECASE_VERSION=${VERSION}
 WORKDIR /app/apps/server
 COPY --from=server-deps /app/node_modules /app/node_modules
 # Anything npm had to nest under the server instead of hoisting (usually empty).
