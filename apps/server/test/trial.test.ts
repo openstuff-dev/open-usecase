@@ -1751,7 +1751,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     });
   });
 
-  describe('UC-7: the glossary in OpenPurpose', () => {
+  describe('the glossary in OpenPurpose (no approved use case yet)', () => {
     let stub: Server;
     let stubUrl: string;
     let answer: { status: number; body: unknown };
@@ -1803,14 +1803,14 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       await new Promise((resolve) => stub.close(resolve));
     });
 
-    it('UC-7/S3 without the integration, no terms and everything else works', async () => {
+    it('without the integration, no terms and everything else works', async () => {
       expect(await terms()).toEqual({ state: 'off', terms: [] });
       const instructions = must((await agent(agentA.token)).getInstructions());
       expect(instructions).not.toContain('list_terms');
       expect((await call(agentA.token, 'list_terms', { project: 'shop' })).text).toContain('no glossary');
     });
 
-    it('UC-7/S2 an admin adds the link, and a wrong token is refused before it is saved', async () => {
+    it('an admin adds the link, and a wrong token is refused before it is saved', async () => {
       answer = { status: 401, body: {} };
       const wrong = await admin('PUT', '', { url: stubUrl, token: 'bad' });
       expect(wrong.statusCode).toBe(400);
@@ -1829,7 +1829,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await http({ cookie: adminA }, 'GET', '/api/t/acme/export')).body).not.toContain('op-secret');
     });
 
-    it('UC-7/S2 the terms come from OpenPurpose, with the most specific definition, and are kept a while', async () => {
+    it('the terms come from OpenPurpose, with the most specific definition, and are kept a while', async () => {
       answer = { status: 200, body: CONTEXT };
       calls.length = 0;
       expect(await terms()).toEqual({
@@ -1845,7 +1845,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(JSON.parse(must(calls[0]).body)).toEqual({ remote_url: 'https://github.com/acme/shop.git' });
     });
 
-    it('UC-7/S1 an agent is told to keep to the terms, and can read them', async () => {
+    it('an agent is told to keep to the terms, and can read them', async () => {
       const instructions = must((await agent(agentA.token)).getInstructions());
       expect(instructions).toContain('Use only those terms');
       expect(instructions).toContain('propose a new one in OpenPurpose');
@@ -1853,7 +1853,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).toContain('- Member: Someone who signs in to a Team.');
     });
 
-    it('UC-7/S4 when OpenPurpose can not be reached, the page says so and review still works', async () => {
+    it('when OpenPurpose can not be reached, the page says so and review still works', async () => {
       await admin('PUT', '', { url: stubUrl, token: 'op-secret' }); // Clears what was kept.
       answer = { status: 500, body: {} };
       expect(await terms()).toEqual({ state: 'unreachable', terms: [] });
@@ -1862,12 +1862,12 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       answer = { status: 200, body: CONTEXT };
     });
 
-    it('UC-7/S3 a public-only server refuses an internal address', async () => {
+    it('a public-only server refuses an internal address', async () => {
       const policy = { mode: 'public' as const, allow: [] };
       await expect(testLink(policy, stubUrl, 'x')).rejects.toThrow(/internal address/);
     });
 
-    it('UC-7/S3 removing the link turns it all off again', async () => {
+    it('removing the link turns it all off again', async () => {
       expect((await admin('DELETE', '')).statusCode).toBe(200);
       expect(await terms()).toEqual({ state: 'off', terms: [] });
     });
