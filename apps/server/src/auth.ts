@@ -190,6 +190,35 @@ export function registerAuth(app: FastifyInstance, pool: Pool, config: Config): 
     return { ok: true };
   });
 
+  /** Any signed-in person changes their own password. Their other sessions end; this one stays. */
+  app.put('/api/me/password', async (request) => {
+    const account = requirePerson(request);
+    const body = z
+      .object({
+        current: z.string().min(1).max(200),
+        next: z.string().min(10, 'Use at least 10 characters.').max(200),
+      })
+      .parse(request.body);
+    const { rows } = await pool.query<{ password_hash: string }>(
+      'SELECT password_hash FROM accounts WHERE id = $1',
+      [account.id],
+    );
+    const stored = rows.at(0)?.password_hash ?? DUMMY_HASH;
+    if (!(await verifyPassword(body.current, stored))) {
+      throw new HttpError(400, 'Your current password isn’t right.');
+    }
+    const token = request.cookies[SESSION_COOKIE] ?? '';
+    await pool.query('UPDATE accounts SET password_hash = $2 WHERE id = $1', [
+      account.id,
+      await hashPassword(body.next),
+    ]);
+    await pool.query('DELETE FROM sessions WHERE account_id = $1 AND token_hash <> $2', [
+      account.id,
+      sha256(token),
+    ]);
+    return { ok: true };
+  });
+
   app.get('/api/me', async (request): Promise<Me> => {
     const account = requirePerson(request);
     const id = pg.escapeLiteral(account.id);

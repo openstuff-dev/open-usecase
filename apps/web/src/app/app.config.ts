@@ -5,6 +5,7 @@ import {
   withRouterConfig,
   withViewTransitions,
 } from '@angular/router';
+import { provideTheme } from '@openstuff-dev/ui-angular';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -18,5 +19,6 @@ export const appConfig: ApplicationConfig = {
       // Short cross-fades between pages; none with reduced motion (see styles.css).
       withViewTransitions({ skipInitialTransition: true }),
     ),
+    provideTheme({ storageKey: 'open-usecase-theme' }),
   ],
 };
