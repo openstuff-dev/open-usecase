@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Glossary, OpenPurposeLink } from '@open-usecase/contracts';
 import { teamAccess } from '../auth.js';
-import type { Vault } from '../crypto.js';
+import type { Vault } from '@openstuff-dev/server';
 import { withScope, type Pool } from '../db.js';
-import type { FetchPolicy } from '../safe-fetch.js';
+import type { FetchPolicy } from '@openstuff-dev/server';
 import { type GlossaryReader, testLink } from '../service/glossary.js';
 
 const teamParam = z.object({ team: z.string().max(63) });

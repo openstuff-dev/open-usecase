@@ -3,12 +3,16 @@ import type { AddressInfo } from 'node:net';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
-import type { FetchPolicy } from '../src/safe-fetch.js';
+import type { FetchPolicy } from '@openstuff-dev/server';
 import { publishOwnVersion, testOpenVersion } from '../src/service/openversion.js';
 
 // A stand-in OpenVersion on localhost. Localhost is internal, so the test policy allows it, as a
 // self-hosted server with OPENUSECASE_FETCH=private would.
-const policy: FetchPolicy = { mode: 'private', allow: ['127.0.0.1', 'localhost'] };
+const policy: FetchPolicy = {
+  mode: 'private',
+  allow: ['127.0.0.1', 'localhost'],
+  envPrefix: 'OPENUSECASE',
+};
 // The publish logs through the server's logger; the test only needs the methods it calls.
 const log = { info: () => undefined, warn: () => undefined } as unknown as FastifyBaseLogger;
 const GOOD = 'ov_live_good_token';
@@ -85,7 +89,7 @@ describe('UC-7 a server admin connects OpenVersion', () => {
   });
 
   it('UC-7/S2 an internal address is refused under the public policy, with the fix named', async () => {
-    const answer = await testOpenVersion({ mode: 'public', allow: [] }, base, GOOD);
+    const answer = await testOpenVersion({ mode: 'public', allow: [], envPrefix: 'OPENUSECASE' }, base, GOOD);
     expect(answer.ok).toBe(false);
     expect(answer.message).toContain('OPENUSECASE_FETCH=private');
   });

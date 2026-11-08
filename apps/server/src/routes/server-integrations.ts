@@ -2,10 +2,10 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requirePerson } from '../auth.js';
 import type { Config } from '../config.js';
-import type { Vault } from '../crypto.js';
+import type { Vault } from '@openstuff-dev/server';
 import { type Pool } from '../db.js';
 import { HttpError } from '../errors.js';
-import type { FetchPolicy } from '../safe-fetch.js';
+import type { FetchPolicy } from '@openstuff-dev/server';
 import { type ConnectionAnswer, testOpenVersion } from '../service/openversion.js';
 
 /**

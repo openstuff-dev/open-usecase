@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { FetchRefused, type FetchPolicy, safeFetch } from '../safe-fetch.js';
+import { FetchRefused, type FetchPolicy, safeFetch } from '@openstuff-dev/server';
 
 export interface ConnectionAnswer {
   ok: boolean;

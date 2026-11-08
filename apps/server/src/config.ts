@@ -1,3 +1,4 @@
+import type { FetchPolicy } from '@openstuff-dev/server';
 /** Settings from environment variables. Each has a default, so the server starts without any. */
 export interface Config {
   port: number;
@@ -64,3 +65,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .filter(Boolean),
   };
 }
+
+/** The fetch policy integrations use, from OPENUSECASE_FETCH and OPENUSECASE_FETCH_ALLOW. */
+export const policyFrom = (config: Config): FetchPolicy => ({
+  mode: config.fetch,
+  allow: config.fetchAllow,
+  envPrefix: 'OPENUSECASE',
+});
