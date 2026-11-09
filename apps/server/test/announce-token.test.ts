@@ -52,7 +52,7 @@ describe.skipIf(!url)('UC-8 and UC-9 the OpenAnnounce token', () => {
     await pool.end();
   });
 
-  it('UC-9/S1 S2 S7 signs an opaque id and the groups for the team, never a name or email', async () => {
+  it('UC-9/S1 UC-9/S2 UC-9/S7 signs an opaque id and the groups for the team, never a name or email', async () => {
     await pool.query(
       `INSERT INTO server_integrations (kind, url, public_key, signing_secret_encrypted)
        VALUES ('openannounce', 'https://news.example.com', 'pk_news_token_12345678', $1)`,
