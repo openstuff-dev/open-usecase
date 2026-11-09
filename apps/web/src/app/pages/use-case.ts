@@ -15,12 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
   Field,
+  onReturn,
   Skeleton,
+  slowLoading,
   Toaster,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../core/api';
 import { IdempotencyKey } from '../core/idempotency';
-import { onReturn, slowLoading } from '../core/loading';
 import { Comments, Gherkin } from '../shared/gherkin';
 import {
   APPROVAL_LABELS,

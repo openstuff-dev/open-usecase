@@ -1,11 +1,11 @@
 import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
-import { Button, Callout, FileInput, SectionHeader, SettingCard, Toaster } from '@openstuff-dev/ui-angular';
+import { Button, Callout, FileInput, SectionHeader, SettingCard, SettingCardBody, Toaster } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
 
 /** Everything in this team as one file, and back again. */
 @Component({
   selector: 'app-data',
-  imports: [Button, Callout, FileInput, SectionHeader, SettingCard],
+  imports: [Button, Callout, FileInput, SectionHeader, SettingCard, SettingCardBody],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'stack' },
   template: `
@@ -20,8 +20,10 @@ import { Api, errorText } from '../../core/api';
       title="Export"
       description="One file with your projects, use cases, revisions, comments and history. It never holds a token or a password."
     >
-      <div>
-        <a os-button variant="primary" [href]="base + '/export'" download>Download export</a>
+      <div os-setting-card-body>
+        <div>
+          <a os-button variant="primary" [href]="base + '/export'" download>Download export</a>
+        </div>
       </div>
     </section>
 
@@ -30,16 +32,18 @@ import { Api, errorText } from '../../core/api';
       title="Import"
       description="You can import it into a team that has no projects yet."
     >
-      <input
-        type="file"
-        os-file-input
-        accept="application/json,.json"
-        aria-label="Export file"
-        (change)="importFile($event)"
-      />
-      @if (error(); as error) {
-        <os-callout tone="danger" title="Nothing was imported">{{ error }}</os-callout>
-      }
+      <div os-setting-card-body>
+        <input
+          type="file"
+          os-file-input
+          accept="application/json,.json"
+          aria-label="Export file"
+          (change)="importFile($event)"
+        />
+        @if (error(); as error) {
+          <os-callout tone="danger" title="Nothing was imported">{{ error }}</os-callout>
+        }
+      </div>
     </section>
   `,
 })

@@ -19,15 +19,17 @@ import {
   Control,
   EmptyState,
   Field,
+  onReturn,
   SecretDialog,
   SectionHeader,
   SettingCard,
+  SettingCardBody,
   SettingCardFooter,
   Skeleton,
+  slowLoading,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
 import { IdempotencyKey } from '../../core/idempotency';
-import { onReturn, slowLoading } from '../../core/loading';
 
 const MODES: { value: ReviewMode; label: string; hint: string }[] = [
   {
@@ -60,6 +62,7 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
     Field,
     SectionHeader,
     SettingCard,
+    SettingCardBody,
     SettingCardFooter,
     Skeleton,
   ],
@@ -85,7 +88,7 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
         title="How proposals get approved"
         description="Each agent has one of these. Change it on the agent below."
       >
-        <dl class="modes">
+        <dl os-setting-card-body class="modes">
           @for (mode of modes; track mode.value) {
             <dt>{{ mode.label }}</dt>
             <dd>{{ mode.hint }}</dd>
@@ -100,7 +103,7 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
           [description]="actor.kind === 'ci' ? 'CI job' : 'Agent'"
         >
           @if (actor.kind === 'agent') {
-            <div class="fields">
+            <div os-setting-card-body class="fields">
               <os-field label="How its proposals get approved">
                 <select
                   os-select
@@ -124,23 +127,25 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
               </label>
             </div>
           }
-          <ul class="tokens">
-            @for (token of actor.tokens; track token.id) {
-              <li>
-                <code>{{ token.prefix }}…</code>
-                <button
-                  os-button
-                  size="sm"
-                  variant="ghost"
-                  tone="danger"
-                  type="button"
-                  (click)="revoke(token.id, actor.name)"
-                >
-                  Revoke<span class="os-visually-hidden"> {{ token.prefix }}</span>
-                </button>
-              </li>
-            }
-          </ul>
+          @if (actor.tokens.length) {
+            <ul os-setting-card-body class="tokens">
+              @for (token of actor.tokens; track token.id) {
+                <li>
+                  <code>{{ token.prefix }}…</code>
+                  <button
+                    os-button
+                    size="sm"
+                    variant="ghost"
+                    tone="danger"
+                    type="button"
+                    (click)="revoke(token.id, actor.name)"
+                  >
+                    Revoke<span class="os-visually-hidden"> {{ token.prefix }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
           <div os-setting-card-footer>
             @if (actor.tokens.length === 0) {
               <small class="no-tokens">
@@ -167,7 +172,7 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
       }
 
       <form os-setting-card title="New agent or CI job" (ngSubmit)="addActor()">
-        <div class="fields">
+        <div os-setting-card-body class="fields">
           <os-field label="Name">
             <input #actorNameInput os-input name="actorName" required [(ngModel)]="actorName" />
           </os-field>
@@ -189,13 +194,6 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
     }
   `,
   styles: `
-    /* The setting card pads only its header and footer, so its content pads itself. */
-    .modes,
-    .tokens:not(:empty),
-    .fields {
-      padding: var(--os-space-4) var(--os-space-5);
-    }
-
     .modes {
       display: grid;
       grid-template-columns: max-content 1fr;

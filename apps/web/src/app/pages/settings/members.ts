@@ -19,16 +19,18 @@ import {
   Control,
   EmptyState,
   Field,
+  onReturn,
   SecretDialog,
   SectionHeader,
   SettingCard,
+  SettingCardBody,
   SettingCardFooter,
   Skeleton,
+  slowLoading,
   Toaster,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
 import { IdempotencyKey } from '../../core/idempotency';
-import { onReturn, slowLoading } from '../../core/loading';
 import { Session } from '../../core/session';
 
 /** Who reviews in this team, and who manages this page. */
@@ -43,6 +45,7 @@ import { Session } from '../../core/session';
     Field,
     SectionHeader,
     SettingCard,
+    SettingCardBody,
     SettingCardFooter,
     Skeleton,
   ],
@@ -68,7 +71,7 @@ import { Session } from '../../core/session';
         title="People in this team"
         description="Change a role or remove someone at once."
       >
-        <ul class="people">
+        <ul os-setting-card-body class="people">
           @for (member of settings.members; track member.accountId) {
             <li>
               <span>
@@ -117,7 +120,7 @@ import { Session } from '../../core/session';
         description="They get a password, shown once, for you to pass on."
         (ngSubmit)="addMember()"
       >
-        <div class="fields">
+        <div os-setting-card-body class="fields">
           <os-field label="Email">
             <input
               #memberEmailInput

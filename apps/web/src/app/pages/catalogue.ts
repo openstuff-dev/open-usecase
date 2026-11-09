@@ -8,11 +8,12 @@ import {
   Control,
   EmptyState,
   Field,
+  onReturn,
   PageHeader,
   Skeleton,
+  slowLoading,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../core/api';
-import { onReturn, slowLoading } from '../core/loading';
 import { iconCatalogue } from '../shared/icons';
 import { HEALTH_LABELS, HEALTH_TONES, STATUS_LABELS, STATUS_TONES } from '../shared/labels';
 

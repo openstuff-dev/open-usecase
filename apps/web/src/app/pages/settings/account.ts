@@ -7,6 +7,7 @@ import {
   Field,
   SectionHeader,
   SettingCard,
+  SettingCardBody,
   SettingCardFooter,
   Toaster,
 } from '@openstuff-dev/ui-angular';
@@ -24,6 +25,7 @@ import { Session } from '../../core/session';
     Field,
     SectionHeader,
     SettingCard,
+    SettingCardBody,
     SettingCardFooter,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,12 +43,14 @@ import { Session } from '../../core/session';
         title="Your details"
         description="Your name and email are set by an admin."
       >
-        <dl class="facts">
-          <dt>Name</dt>
-          <dd>{{ me.name || '—' }}</dd>
-          <dt>Email</dt>
-          <dd>{{ me.email }}</dd>
-        </dl>
+        <div os-setting-card-body>
+          <dl class="facts">
+            <dt>Name</dt>
+            <dd>{{ me.name || '—' }}</dd>
+            <dt>Email</dt>
+            <dd>{{ me.email }}</dd>
+          </dl>
+        </div>
       </section>
     }
 
@@ -56,31 +60,33 @@ import { Session } from '../../core/session';
       description="At least 10 characters. Your other sessions are signed out."
       (ngSubmit)="changePassword()"
     >
-      @if (error(); as error) {
-        <os-callout tone="danger">{{ error }}</os-callout>
-      }
-      <div class="fields">
-        <os-field label="Current password">
-          <input
-            os-input
-            type="password"
-            name="current"
-            autocomplete="current-password"
-            required
-            [(ngModel)]="current"
-          />
-        </os-field>
-        <os-field label="New password">
-          <input
-            os-input
-            type="password"
-            name="next"
-            autocomplete="new-password"
-            required
-            minlength="10"
-            [(ngModel)]="next"
-          />
-        </os-field>
+      <div os-setting-card-body>
+        @if (error(); as error) {
+          <os-callout tone="danger">{{ error }}</os-callout>
+        }
+        <div class="fields">
+          <os-field label="Current password">
+            <input
+              os-input
+              type="password"
+              name="current"
+              autocomplete="current-password"
+              required
+              [(ngModel)]="current"
+            />
+          </os-field>
+          <os-field label="New password">
+            <input
+              os-input
+              type="password"
+              name="next"
+              autocomplete="new-password"
+              required
+              minlength="10"
+              [(ngModel)]="next"
+            />
+          </os-field>
+        </div>
       </div>
       <div os-setting-card-footer>
         <button os-button variant="primary" type="submit" [loading]="saving()">

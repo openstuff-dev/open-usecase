@@ -18,14 +18,16 @@ import {
   Control,
   EmptyState,
   Field,
+  onReturn,
   SectionHeader,
   SettingCard,
+  SettingCardBody,
   SettingCardFooter,
   Skeleton,
+  slowLoading,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
 import { IdempotencyKey } from '../../core/idempotency';
-import { onReturn, slowLoading } from '../../core/loading';
 
 /** Projects, and the repositories agents propose from. */
 @Component({
@@ -39,6 +41,7 @@ import { onReturn, slowLoading } from '../../core/loading';
     Field,
     SectionHeader,
     SettingCard,
+    SettingCardBody,
     SettingCardFooter,
     Skeleton,
   ],
@@ -65,42 +68,44 @@ import { onReturn, slowLoading } from '../../core/loading';
           [title]="project.name"
           [description]="'Language: ' + project.language"
         >
-          <ul class="repos">
-            @for (repository of project.repositories; track repository.id) {
-              <li>
-                <span
-                  >{{ repository.remote }} <small>{{ repository.defaultBranch }}</small></span
-                >
-                <button
-                  os-button
-                  size="sm"
-                  variant="ghost"
-                  tone="danger"
-                  type="button"
-                  (click)="removeRepository(repository.id, repository.remote)"
-                >
-                  Remove<span class="os-visually-hidden"> {{ repository.remote }}</span>
-                </button>
-              </li>
-            }
-          </ul>
-          <form class="inline" (ngSubmit)="addRepository(project)">
-            <os-field
-              [label]="'Add a repository to ' + project.name"
-              hint="Its git remote, such as git@github.com:acme/shop.git"
-            >
-              <input
-                os-input
-                [name]="'remote-' + project.id"
-                required
-                [ngModel]="repositoryDraft(project)"
-                (ngModelChange)="setRepositoryDraft(project, $event)"
-              />
-            </os-field>
-            <button os-button type="submit" [disabled]="!repositoryDraft(project).trim()">
-              Add repository
-            </button>
-          </form>
+          <div os-setting-card-body>
+            <ul class="repos">
+              @for (repository of project.repositories; track repository.id) {
+                <li>
+                  <span
+                    >{{ repository.remote }} <small>{{ repository.defaultBranch }}</small></span
+                  >
+                  <button
+                    os-button
+                    size="sm"
+                    variant="ghost"
+                    tone="danger"
+                    type="button"
+                    (click)="removeRepository(repository.id, repository.remote)"
+                  >
+                    Remove<span class="os-visually-hidden"> {{ repository.remote }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+            <form class="inline" (ngSubmit)="addRepository(project)">
+              <os-field
+                [label]="'Add a repository to ' + project.name"
+                hint="Its git remote, such as git@github.com:acme/shop.git"
+              >
+                <input
+                  os-input
+                  [name]="'remote-' + project.id"
+                  required
+                  [ngModel]="repositoryDraft(project)"
+                  (ngModelChange)="setRepositoryDraft(project, $event)"
+                />
+              </os-field>
+              <button os-button type="submit" [disabled]="!repositoryDraft(project).trim()">
+                Add repository
+              </button>
+            </form>
+          </div>
         </section>
       } @empty {
         <os-empty-state title="No projects yet">
@@ -114,7 +119,7 @@ import { onReturn, slowLoading } from '../../core/loading';
       }
 
       <form os-setting-card title="New project" (ngSubmit)="addProject()">
-        <div class="fields">
+        <div os-setting-card-body class="fields">
           <os-field label="Project name">
             <input
               #projectNameInput

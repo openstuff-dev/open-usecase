@@ -24,13 +24,14 @@ import {
   DialogTitle,
   EmptyState,
   Field,
+  onReturn,
   PageHeader,
   Skeleton,
+  slowLoading,
   Toaster,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../core/api';
 import { IdempotencyKey } from '../core/idempotency';
-import { onReturn, slowLoading } from '../core/loading';
 import { Comments, Gherkin, termsUsed } from '../shared/gherkin';
 import { iconInbox } from '../shared/icons';
 import {
