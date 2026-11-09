@@ -3,10 +3,10 @@ import config from '../../eslint.config.mjs';
 export default [
   ...config,
   {
-    // Tests and the Vitest config sit outside tsconfig.json, which only builds src.
+    // The tests have their own test/tsconfig.json. The Vitest config sits outside both.
     files: ['**/*.ts'],
     languageOptions: {
-      parserOptions: { projectService: { allowDefaultProject: ['test/*.ts', 'vitest.config.ts'] } },
+      parserOptions: { projectService: { allowDefaultProject: ['vitest.config.ts'] } },
     },
   },
 ];

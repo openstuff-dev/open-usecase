@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   DestroyRef,
   effect,
   inject,
@@ -8,7 +9,8 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import type { OpenPurposeLink } from '@open-usecase/contracts';
+import type { OpenPurposeLink, Role } from '@open-usecase/contracts';
+import { allAnnounceGroups } from '@openstuff-dev/ui';
 import {
   Button,
   Callout,
@@ -22,6 +24,7 @@ import {
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
 import { onReturn } from '../../core/loading';
+import { Session } from '../../core/session';
 import { ServerConnections } from './server-connections';
 
 /** Other OpenStuff apps this team connects to. Today: the OpenPurpose glossary. */
@@ -48,7 +51,7 @@ import { ServerConnections } from './server-connections';
     ></header>
 
     @if (serverAdmin()) {
-      <app-server-connections />
+      <app-server-connections tenant="team" [announceGroups]="groups()" />
     }
 
     @if (team() && admin()) {
@@ -130,6 +133,13 @@ export class Integrations {
   readonly admin = input(false);
   readonly serverAdmin = input(false);
   private readonly api = inject(Api);
+  private readonly session = inject(Session);
+
+  /** Every team a server admin can see, with every role: the OpenAnnounce groups to create. */
+  protected readonly groups = computed(() =>
+    allAnnounceGroups(this.session.me()?.teams.map((team) => team.slug) ?? [], ROLES),
+  );
+
   private readonly confirm = inject(ConfirmDialog);
   private readonly toaster = inject(Toaster);
   protected readonly link = signal<string | null>(null);
@@ -192,3 +202,5 @@ export class Integrations {
     }
   }
 }
+
+const ROLES: readonly Role[] = ['admin', 'member'];

@@ -2,13 +2,19 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
-import { actorFromToken, bearer, registerAuth, requirePerson } from './auth.js';
+import type { Role } from '@open-usecase/contracts';
+import { actorFromToken, bearer, registerAuth, requirePerson, teamAccess } from './auth.js';
 import { type Config, policyFrom } from './config.js';
 import { withScope, type Pool } from './db.js';
 import { registerErrorHandler } from './errors.js';
 import { registerIdempotency } from './idempotency.js';
 import { createMcpServer } from './mcp.js';
-import { loadVault, publishVersionOnStart, registerIntegrationRoutes } from '@openstuff-dev/server';
+import {
+  announceGroups,
+  loadVault,
+  publishVersionOnStart,
+  registerIntegrationRoutes,
+} from '@openstuff-dev/server';
 import { registerActorRoutes } from './routes/actors.js';
 import { registerGlossaryRoutes } from './routes/glossary.js';
 import { registerCatalogueRoutes } from './routes/catalogue.js';
@@ -17,6 +23,9 @@ import { integrationOffers } from './integrations.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerV1Routes } from './routes/v1.js';
 import { GlossaryReader } from './service/glossary.js';
+
+/** Every role: anyone in a team may read their own OpenAnnounce token. */
+const ALL_ROLES: readonly Role[] = ['admin', 'member'];
 
 /** One read per MCP request, because the instructions depend on it. */
 async function hasGlossary(pool: Pool, teamId: string): Promise<boolean> {
@@ -63,6 +72,15 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
     appName: 'OpenUsecase',
     offers,
     isServerAdmin: (request) => requirePerson(request).isServerAdmin,
+    // OpenAnnounce sees the account's id and the groups for the team in `?team=`, never a name
+    // or an email. Someone not in that team gets 404 from teamAccess; tokens get nothing.
+    announceUser: async (request) => {
+      if (!request.account || request.usedToken) return null;
+      const { team } = request.query as { team?: unknown };
+      if (typeof team !== 'string' || !team) return { sub: request.account.id, groups: [] };
+      const access = await teamAccess(pool, request, team, ALL_ROLES);
+      return { sub: request.account.id, groups: announceGroups(team, access.role) };
+    },
   });
   publishVersionOnStart(app, {
     db: pool,
