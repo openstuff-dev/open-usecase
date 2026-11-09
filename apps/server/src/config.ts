@@ -17,7 +17,10 @@ export interface Config {
   trustProxy: boolean | string;
   /** The largest test report CI may upload. */
   reportMaxBytes: number;
-  /** Encrypts the OpenPurpose token. Without it, a key is made and kept in the database. */
+  /**
+   * Encrypts the OpenPurpose token and the connection secrets. Without it, a key is made and
+   * kept in the database.
+   */
   secretKey: string | undefined;
   /**
    * A server-wide OpenVersion connection from the environment. When the URL and public key are
@@ -29,8 +32,14 @@ export interface Config {
     publicKey: string | undefined;
     deployToken: string | undefined;
   };
-  /** This image's version, set from the image tag at build time. `0.0.0` for a local build. */
-  version: string;
+  /** OpenAnnounce, the same way. The signing secret lets messages be aimed at a team or role. */
+  openAnnounce: {
+    url: string | undefined;
+    publicKey: string | undefined;
+    signingSecret: string | undefined;
+  };
+  /** The release this image was built from, set by the image build. `unknown` for a local build. */
+  appVersion: string;
   /** `private` lets this server call internal addresses, such as an OpenPurpose on your network. */
   fetch: 'public' | 'private';
   /** With `private`: only these hosts. Empty means any. */
@@ -57,7 +66,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       publicKey: env.OPENUSECASE_OPENVERSION_PUBLIC_KEY || undefined,
       deployToken: env.OPENUSECASE_OPENVERSION_DEPLOY_TOKEN || undefined,
     },
-    version: env.OPENUSECASE_VERSION || '0.0.0',
+    openAnnounce: {
+      url: env.OPENUSECASE_OPENANNOUNCE_URL?.replace(/\/$/, '') || undefined,
+      publicKey: env.OPENUSECASE_OPENANNOUNCE_PUBLIC_KEY || undefined,
+      signingSecret: env.OPENUSECASE_OPENANNOUNCE_SIGNING_SECRET || undefined,
+    },
+    appVersion: env.VERSION?.trim() || 'unknown',
     fetch: env.OPENUSECASE_FETCH === 'private' ? 'private' : 'public',
     fetchAllow: (env.OPENUSECASE_FETCH_ALLOW ?? '')
       .split(',')
