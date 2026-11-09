@@ -72,3 +72,6 @@ jobs:
           for file in apps/*/test-results.xml packages/*/test-results.xml; do
             node packages/usecase/dist/index.js report --suite "$(basename "$(dirname "$file")")" "$file"
           done
+          if [ -f apps/web/e2e-results.xml ]; then
+            node packages/usecase/dist/index.js report --suite e2e apps/web/e2e-results.xml
+          fi
