@@ -5,10 +5,10 @@ export default [
   { ignores: ['src/tokens'] },
   ...angular,
   {
-    // Tests and the Vitest config sit outside the tsconfig, which only builds src.
+    // Tests, the browser tests and their configs sit outside the tsconfig, which only builds src.
     files: ['**/*.ts'],
     languageOptions: {
-      parserOptions: { projectService: { allowDefaultProject: ['test/*.ts', 'vitest.config.ts'] } },
+      parserOptions: { projectService: { allowDefaultProject: ['test/*.ts', 'e2e/*.ts', 'vitest.config.ts', 'playwright.config.ts'] } },
     },
   },
   {

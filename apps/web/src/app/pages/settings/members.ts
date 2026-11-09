@@ -2,10 +2,13 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  type ElementRef,
+  computed,
   effect,
   inject,
   input,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { MemberSettings, NewMemberResult, Role, TeamSettings } from '@open-usecase/contracts';
@@ -26,6 +29,7 @@ import {
 import { Api, errorText } from '../../core/api';
 import { IdempotencyKey } from '../../core/idempotency';
 import { onReturn, slowLoading } from '../../core/loading';
+import { Session } from '../../core/session';
 
 /** Who reviews in this team, and who manages this page. */
 @Component({
@@ -51,6 +55,9 @@ import { onReturn, slowLoading } from '../../core/loading';
       description="Any member can review. Admins also manage this page."
     ></header>
 
+    @if (loadError(); as error) {
+      <os-callout tone="danger" title="The members didn’t load">{{ error }}</os-callout>
+    }
     @if (error(); as error) {
       <os-callout tone="danger" title="That didn’t work">{{ error }}</os-callout>
     }
@@ -97,6 +104,13 @@ import { onReturn, slowLoading } from '../../core/loading';
         </ul>
       </section>
 
+      @if (onlyYou()) {
+        <os-empty-state title="Only you so far">
+          <p>Add someone to review what agents propose. They get a password to sign in with.</p>
+          <div><button os-button type="button" (click)="focusEmail()">Add member</button></div>
+        </os-empty-state>
+      }
+
       <form
         os-setting-card
         title="Add a member"
@@ -105,7 +119,14 @@ import { onReturn, slowLoading } from '../../core/loading';
       >
         <div class="fields">
           <os-field label="Email">
-            <input os-input type="email" name="memberEmail" required [(ngModel)]="memberEmail" />
+            <input
+              #memberEmailInput
+              os-input
+              type="email"
+              name="memberEmail"
+              required
+              [(ngModel)]="memberEmail"
+            />
           </os-field>
           <os-field label="Name (optional)">
             <input os-input name="memberName" [(ngModel)]="memberName" />
@@ -167,11 +188,26 @@ export class Members {
   private readonly secret = inject(SecretDialog);
   protected readonly settings = signal<TeamSettings | null>(null);
   protected readonly error = signal<string | null>(null);
+  protected readonly loadError = signal<string | null>(null);
   protected readonly loading = slowLoading();
+  private readonly session = inject(Session);
+  private readonly emailInput = viewChild<ElementRef<HTMLInputElement>>('memberEmailInput');
+
+  /** True when you're the only member, so the empty state invites the first one. */
+  protected readonly onlyYou = computed(() => {
+    const members = this.settings()?.members;
+    const me = this.session.me()?.id;
+    return members?.every((m) => m.accountId === me) ?? false;
+  });
+
   protected memberEmail = '';
   protected memberName = '';
   protected memberRole: Role = 'member';
   private readonly key = new IdempotencyKey();
+
+  protected focusEmail(): void {
+    this.emailInput()?.nativeElement.focus();
+  }
 
   constructor() {
     effect(() => {
@@ -224,7 +260,7 @@ export class Members {
   }
 
   private async load(team: string): Promise<void> {
-    this.error.set(null);
+    this.loadError.set(null);
     try {
       const settings = await this.loading.track(
         this.api.get<TeamSettings>(`/api/t/${team}/settings`, {
@@ -235,7 +271,7 @@ export class Members {
       );
       if (team === this.team()) this.settings.set(settings);
     } catch (error) {
-      if (team === this.team()) this.error.set(errorText(error));
+      if (team === this.team()) this.loadError.set(errorText(error));
     }
   }
 

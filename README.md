@@ -177,6 +177,16 @@ TEST_DATABASE_URL=postgres://openusecase:openusecase@localhost:55436/openusecase
   npx nx run-many -t lint stylelint typecheck test build
 ```
 
+Without `TEST_DATABASE_URL` those tests are skipped.
+
+Settings also has tests in a real browser (Playwright). They start the server on port 18123 with
+a database whose name must end in `_e2e`, and they add data to it:
+
+```sh
+npx playwright install chromium   # or E2E_CHROME_CHANNEL=chrome to use your installed Chrome
+E2E_DATABASE_URL=postgres://openusecase:openusecase@localhost:55436/openusecase_e2e npx nx run web:e2e
+```
+
 Test names carry their scenario's ID: this project uses itself. The use cases are in
 [`docs/trial/usecases.md`](docs/trial/usecases.md), and the trial that shaped them is in
 [`docs/trial/report.md`](docs/trial/report.md).

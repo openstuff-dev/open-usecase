@@ -2,12 +2,15 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  type ElementRef,
   effect,
   inject,
   input,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import type { ActorSettings, NewToken, ReviewMode, TeamSettings } from '@open-usecase/contracts';
 import {
   Button,
@@ -27,13 +30,21 @@ import { IdempotencyKey } from '../../core/idempotency';
 import { onReturn, slowLoading } from '../../core/loading';
 
 const MODES: { value: ReviewMode; label: string; hint: string }[] = [
-  { value: 'human_approval', label: 'A person approves', hint: 'The default.' },
+  {
+    value: 'human_approval',
+    label: 'A person approves',
+    hint: 'A member reviews each proposal in the Inbox. This is the default.',
+  },
   {
     value: 'agent_review',
     label: 'A reviewer agent approves',
-    hint: 'A different agent with reviewer rights. Needs the user’s request word for word.',
+    hint: 'A different agent that can review approves it. The proposal must carry the user’s request word for word.',
   },
-  { value: 'auto_approve', label: 'Approved on arrival', hint: 'No review. The record says so.' },
+  {
+    value: 'auto_approve',
+    label: 'Approved on arrival',
+    hint: 'Nobody reviews it, and the use case records that it was approved without a review.',
+  },
 ];
 
 /** Agents and CI jobs: how their proposals are approved, and their tokens. */
@@ -41,6 +52,7 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
   selector: 'app-agents',
   imports: [
     FormsModule,
+    RouterLink,
     Button,
     Callout,
     Control,
@@ -60,11 +72,27 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
       description="Agents connect to /mcp with a token. A CI token can only upload test reports and run the PR check. Neither can ever change what it may do."
     ></header>
 
+    @if (loadError(); as error) {
+      <os-callout tone="danger" title="The agents didn’t load">{{ error }}</os-callout>
+    }
     @if (error(); as error) {
       <os-callout tone="danger" title="That didn’t work">{{ error }}</os-callout>
     }
 
     @if (settings(); as settings) {
+      <section
+        os-setting-card
+        title="How proposals get approved"
+        description="Each agent has one of these. Change it on the agent below."
+      >
+        <dl class="modes">
+          @for (mode of modes; track mode.value) {
+            <dt>{{ mode.label }}</dt>
+            <dd>{{ mode.hint }}</dd>
+          }
+        </dl>
+      </section>
+
       @for (actor of settings.actors; track actor.id) {
         <section
           os-setting-card
@@ -73,7 +101,7 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
         >
           @if (actor.kind === 'agent') {
             <div class="fields">
-              <os-field label="How its proposals get approved" [hint]="modeHint(actor.review)">
+              <os-field label="How its proposals get approved">
                 <select
                   os-select
                   [ngModel]="actor.review"
@@ -111,24 +139,37 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
                   Revoke<span class="os-visually-hidden"> {{ token.prefix }}</span>
                 </button>
               </li>
-            } @empty {
-              <li><small>No working tokens. Make one to connect this agent.</small></li>
             }
           </ul>
           <div os-setting-card-footer>
+            @if (actor.tokens.length === 0) {
+              <small class="no-tokens">
+                {{
+                  actor.kind === 'ci'
+                    ? 'No working tokens, so this CI job can’t report test results. Make one for its secrets.'
+                    : 'No working tokens, so this agent can’t connect. Make one, then follow Connect an agent.'
+                }}
+              </small>
+            }
             <button os-button size="sm" type="button" (click)="addToken(actor)">New token</button>
           </div>
         </section>
       } @empty {
         <os-empty-state title="No agents yet">
           <p>Add one agent per developer and tool, so the history shows who proposed what.</p>
+          <div class="empty-actions">
+            <button os-button type="button" (click)="focusName()">Add agent</button>
+            <a os-button variant="ghost" [routerLink]="['/t', team(), 'settings', 'connect-agent']"
+              >Connect an agent</a
+            >
+          </div>
         </os-empty-state>
       }
 
       <form os-setting-card title="New agent or CI job" (ngSubmit)="addActor()">
         <div class="fields">
           <os-field label="Name">
-            <input os-input name="actorName" required [(ngModel)]="actorName" />
+            <input #actorNameInput os-input name="actorName" required [(ngModel)]="actorName" />
           </os-field>
           <os-field label="Kind">
             <select os-select name="actorKind" [(ngModel)]="actorKind">
@@ -148,6 +189,50 @@ const MODES: { value: ReviewMode; label: string; hint: string }[] = [
     }
   `,
   styles: `
+    /* The setting card pads only its header and footer, so its content pads itself. */
+    .modes,
+    .tokens:not(:empty),
+    .fields {
+      padding: var(--os-space-4) var(--os-space-5);
+    }
+
+    .modes {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: var(--os-space-2) var(--os-space-4);
+      margin: 0;
+
+      & dt {
+        font-weight: 500;
+      }
+
+      & dd {
+        margin: 0;
+        color: var(--os-fg-light);
+      }
+    }
+
+    @container (width < 32rem) {
+      .modes {
+        grid-template-columns: 1fr;
+        gap: var(--os-space-1);
+
+        & dd {
+          margin-block-end: var(--os-space-2);
+        }
+      }
+    }
+
+    .empty-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--os-space-2);
+    }
+
+    .no-tokens {
+      margin-inline-end: auto;
+    }
+
     .tokens {
       display: grid;
       gap: var(--os-space-1);
@@ -191,8 +276,10 @@ export class Agents {
   private readonly secret = inject(SecretDialog);
   protected readonly settings = signal<TeamSettings | null>(null);
   protected readonly error = signal<string | null>(null);
+  protected readonly loadError = signal<string | null>(null);
   protected readonly loading = slowLoading();
   protected readonly modes = MODES;
+  private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('actorNameInput');
   protected actorName = '';
   protected actorKind: 'agent' | 'ci' = 'agent';
   private readonly key = new IdempotencyKey();
@@ -208,8 +295,8 @@ export class Agents {
     return `/api/t/${this.team()}`;
   }
 
-  protected modeHint(mode: ReviewMode): string {
-    return MODES.find((m) => m.value === mode)?.hint ?? '';
+  protected focusName(): void {
+    this.nameInput()?.nativeElement.focus();
   }
 
   protected async addActor(): Promise<void> {
@@ -244,7 +331,7 @@ export class Agents {
   protected async revoke(id: string, name: string): Promise<void> {
     const ok = await this.confirm.confirm({
       title: `Revoke this token of ${name}?`,
-      message: 'Anything using it stops working straight away.',
+      message: `Anything using it stops working straight away. ${name} stays, with its history and any other tokens, and you can make it a new one.`,
       confirmLabel: 'Revoke token',
       danger: true,
     });
@@ -260,7 +347,7 @@ export class Agents {
   }
 
   private async load(team: string): Promise<void> {
-    this.error.set(null);
+    this.loadError.set(null);
     try {
       const settings = await this.loading.track(
         this.api.get<TeamSettings>(`/api/t/${team}/settings`, {
@@ -271,7 +358,7 @@ export class Agents {
       );
       if (team === this.team()) this.settings.set(settings);
     } catch (error) {
-      if (team === this.team()) this.error.set(errorText(error));
+      if (team === this.team()) this.loadError.set(errorText(error));
     }
   }
 
