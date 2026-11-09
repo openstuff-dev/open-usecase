@@ -2,10 +2,12 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  type ElementRef,
   effect,
   inject,
   input,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { ProjectSettings, TeamSettings } from '@open-usecase/contracts';
@@ -49,6 +51,9 @@ import { onReturn, slowLoading } from '../../core/loading';
       description="Agents propose from a repository, and its git remote says which project it’s for."
     ></header>
 
+    @if (loadError(); as error) {
+      <os-callout tone="danger" title="The projects didn’t load">{{ error }}</os-callout>
+    }
     @if (error(); as error) {
       <os-callout tone="danger" title="That didn’t work">{{ error }}</os-callout>
     }
@@ -99,16 +104,27 @@ import { onReturn, slowLoading } from '../../core/loading';
         </section>
       } @empty {
         <os-empty-state title="No projects yet">
-          <p>Add a project with the repository your agents work in.</p>
+          <p>
+            Add the repository your agents work in, such as
+            <code>git&#64;github.com:acme/shop.git</code>. Its git remote tells OpenUsecase which
+            project a proposal is for.
+          </p>
+          <div><button os-button type="button" (click)="focusName()">Add project</button></div>
         </os-empty-state>
       }
 
       <form os-setting-card title="New project" (ngSubmit)="addProject()">
         <div class="fields">
           <os-field label="Project name">
-            <input os-input name="projectName" required [(ngModel)]="projectName" />
+            <input
+              #projectNameInput
+              os-input
+              name="projectName"
+              required
+              [(ngModel)]="projectName"
+            />
           </os-field>
-          <os-field label="Git remote">
+          <os-field label="Git remote" hint="Such as git@github.com:acme/shop.git">
             <input os-input name="projectRemote" required [(ngModel)]="projectRemote" />
           </os-field>
           <os-field label="Gherkin language" hint="A code such as en or nl">
@@ -167,12 +183,18 @@ export class Projects {
   private readonly confirm = inject(ConfirmDialog);
   protected readonly settings = signal<TeamSettings | null>(null);
   protected readonly error = signal<string | null>(null);
+  protected readonly loadError = signal<string | null>(null);
   protected readonly loading = slowLoading();
+  private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('projectNameInput');
   protected projectName = '';
   protected projectRemote = '';
   protected projectLanguage = 'en';
   private readonly repositoryDrafts = signal(new Map<string, string>());
   private readonly key = new IdempotencyKey();
+
+  protected focusName(): void {
+    this.nameInput()?.nativeElement.focus();
+  }
 
   constructor() {
     effect(() => {
@@ -229,7 +251,7 @@ export class Projects {
   }
 
   private async load(team: string): Promise<void> {
-    this.error.set(null);
+    this.loadError.set(null);
     try {
       const settings = await this.loading.track(
         this.api.get<TeamSettings>(`/api/t/${team}/settings`, {
@@ -240,7 +262,7 @@ export class Projects {
       );
       if (team === this.team()) this.settings.set(settings);
     } catch (error) {
-      if (team === this.team()) this.error.set(errorText(error));
+      if (team === this.team()) this.loadError.set(errorText(error));
     }
   }
 

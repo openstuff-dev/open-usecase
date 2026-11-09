@@ -23,3 +23,5 @@ vitest.config.*.timestamp*
 .idea
 .DS_Store
 test-results.xml
+apps/web/e2e-output/
+apps/web/e2e-results.xml
