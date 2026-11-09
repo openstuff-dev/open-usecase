@@ -17,13 +17,14 @@ import {
   ConfirmDialog,
   Control,
   Field,
+  onReturn,
   SectionHeader,
   SettingCard,
+  SettingCardBody,
   SettingCardFooter,
   Toaster,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
-import { onReturn } from '../../core/loading';
 import { Session } from '../../core/session';
 import { ServerConnections } from './server-connections';
 
@@ -39,6 +40,7 @@ import { ServerConnections } from './server-connections';
     SectionHeader,
     ServerConnections,
     SettingCard,
+    SettingCardBody,
     SettingCardFooter,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -64,49 +66,51 @@ import { ServerConnections } from './server-connections';
         title="OpenPurpose"
         description="OpenPurpose holds your glossary. With this link, agents are told to keep to its terms, and the inbox marks them. Without it, everything else works the same."
       >
-        @if (link(); as link) {
-          <p class="connected">
-            Connected to {{ link }}
-            <button
-              os-button
-              size="sm"
-              variant="ghost"
-              tone="danger"
-              type="button"
-              (click)="removeLink()"
+        <div os-setting-card-body>
+          @if (link(); as link) {
+            <p class="connected">
+              Connected to {{ link }}
+              <button
+                os-button
+                size="sm"
+                variant="ghost"
+                tone="danger"
+                type="button"
+                (click)="removeLink()"
+              >
+                Remove link
+              </button>
+            </p>
+          }
+          <form class="fields" (ngSubmit)="saveLink()">
+            <os-field label="OpenPurpose URL" hint="Such as https://purpose.example.com">
+              <input os-input type="url" name="openpurposeUrl" required [(ngModel)]="linkUrl" />
+            </os-field>
+            <os-field
+              label="Token"
+              hint="An OpenPurpose token that can read this team’s projects. It’s stored encrypted."
             >
-              Remove link
-            </button>
-          </p>
-        }
-        <form class="fields" (ngSubmit)="saveLink()">
-          <os-field label="OpenPurpose URL" hint="Such as https://purpose.example.com">
-            <input os-input type="url" name="openpurposeUrl" required [(ngModel)]="linkUrl" />
-          </os-field>
-          <os-field
-            label="Token"
-            hint="An OpenPurpose token that can read this team’s projects. It’s stored encrypted."
-          >
-            <input
-              os-input
-              type="password"
-              name="openpurposeToken"
-              autocomplete="off"
-              required
-              [(ngModel)]="linkToken"
-            />
-          </os-field>
-          <div>
-            <button
-              os-button
-              variant="primary"
-              type="submit"
-              [disabled]="!linkUrl.trim() || !linkToken.trim()"
-            >
-              {{ link() ? 'Update link' : 'Add link' }}
-            </button>
-          </div>
-        </form>
+              <input
+                os-input
+                type="password"
+                name="openpurposeToken"
+                autocomplete="off"
+                required
+                [(ngModel)]="linkToken"
+              />
+            </os-field>
+            <div>
+              <button
+                os-button
+                variant="primary"
+                type="submit"
+                [disabled]="!linkUrl.trim() || !linkToken.trim()"
+              >
+                {{ link() ? 'Update link' : 'Add link' }}
+              </button>
+            </div>
+          </form>
+        </div>
       </section>
     }
   `,

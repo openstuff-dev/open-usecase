@@ -15,14 +15,15 @@ import {
   Callout,
   Control,
   Field,
+  onReturn,
   SecretDialog,
   SectionHeader,
   SettingCard,
+  SettingCardBody,
   SettingCardFooter,
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
 import { IdempotencyKey } from '../../core/idempotency';
-import { onReturn } from '../../core/loading';
 import { Session } from '../../core/session';
 import { CopyButton } from '../../shared/copy-button';
 
@@ -38,6 +39,7 @@ import { CopyButton } from '../../shared/copy-button';
     Field,
     SectionHeader,
     SettingCard,
+    SettingCardBody,
     SettingCardFooter,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -54,7 +56,7 @@ import { CopyButton } from '../../shared/copy-button';
       title="MCP address"
       description="The address of this server, for your agent."
     >
-      <p class="address">
+      <p os-setting-card-body class="address">
         <code>{{ mcpUrl }}</code> <app-copy-button [text]="mcpUrl" what="address" />
       </p>
     </section>
@@ -64,7 +66,7 @@ import { CopyButton } from '../../shared/copy-button';
       title="Add it to your agent"
       description="Run this where your agent is set up. Replace the placeholder with the agent’s token."
     >
-      <p class="address">
+      <p os-setting-card-body class="address">
         <code class="command">{{ placeholderCommand }}</code>
         <app-copy-button [text]="placeholderCommand" what="command" />
       </p>
@@ -77,24 +79,28 @@ import { CopyButton } from '../../shared/copy-button';
         description="The token is shown once. Pass it on with the command."
         (ngSubmit)="makeToken()"
       >
-        @if (error(); as error) {
-          <os-callout tone="danger">{{ error }}</os-callout>
-        }
+        <div os-setting-card-body>
+          @if (error(); as error) {
+            <os-callout tone="danger">{{ error }}</os-callout>
+          }
+          @if (agents().length) {
+            <os-field label="Agent">
+              <select os-select name="agent" required [(ngModel)]="agentId">
+                @for (agent of agents(); track agent.id) {
+                  <option [value]="agent.id">{{ agent.name }}</option>
+                }
+              </select>
+            </os-field>
+          } @else {
+            <p class="hint">Add an agent under Agents and CI first.</p>
+          }
+        </div>
         @if (agents().length) {
-          <os-field label="Agent">
-            <select os-select name="agent" required [(ngModel)]="agentId">
-              @for (agent of agents(); track agent.id) {
-                <option [value]="agent.id">{{ agent.name }}</option>
-              }
-            </select>
-          </os-field>
           <div os-setting-card-footer>
             <button os-button variant="primary" type="submit" [loading]="making()">
               Make a token
             </button>
           </div>
-        } @else {
-          <p class="hint">Add an agent under Agents and CI first.</p>
         }
       </form>
     } @else {
@@ -103,7 +109,9 @@ import { CopyButton } from '../../shared/copy-button';
         title="Token"
         description="An admin makes your agent’s token under Agents and CI."
       >
-        <p class="hint">Ask an admin for the token, then use the command above.</p>
+        <p os-setting-card-body class="hint">
+          Ask an admin for the token, then use the command above.
+        </p>
       </section>
     }
   `,
