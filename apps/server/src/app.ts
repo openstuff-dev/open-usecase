@@ -2,19 +2,18 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
-import { actorFromToken, bearer, registerAuth } from './auth.js';
+import { actorFromToken, bearer, registerAuth, requirePerson } from './auth.js';
 import { type Config, policyFrom } from './config.js';
 import { withScope, type Pool } from './db.js';
 import { registerErrorHandler } from './errors.js';
 import { registerIdempotency } from './idempotency.js';
 import { createMcpServer } from './mcp.js';
-import { loadVault } from '@openstuff-dev/server';
+import { loadVault, publishVersionOnStart, registerIntegrationRoutes } from '@openstuff-dev/server';
 import { registerActorRoutes } from './routes/actors.js';
 import { registerGlossaryRoutes } from './routes/glossary.js';
 import { registerCatalogueRoutes } from './routes/catalogue.js';
 import { registerReviewRoutes } from './routes/review.js';
-import { registerServerIntegrationRoutes } from './routes/server-integrations.js';
-import { connectionFor, publishOwnVersion } from './service/openversion.js';
+import { integrationOffers } from './integrations.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerV1Routes } from './routes/v1.js';
 import { GlossaryReader } from './service/glossary.js';
@@ -54,20 +53,24 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
     envName: 'OPENUSECASE_SECRET_KEY',
     log: app.log,
   });
-  registerServerIntegrationRoutes(app, pool, config, policyFrom(config), vault);
-  // After the server is listening, publish this image's version if OpenVersion is connected. Never
-  // blocks startup and never fails it.
-  // Not awaited, so listening never waits for OpenVersion.
-  app.addHook('onListen', () => {
-    const publish = async () => {
-      const connection = await connectionFor(pool, config, vault);
-      if (connection) {
-        await publishOwnVersion(policyFrom(config), connection, config.version, app.log);
-      }
-    };
-    publish().catch((error: unknown) => {
-      app.log.warn({ err: (error as Error).message }, 'Skipped publishing this version.');
-    });
+  // Server-wide connections from the shared package, the same routes every OpenStuff app has.
+  const offers = integrationOffers(config);
+  registerIntegrationRoutes(app, {
+    db: pool,
+    vault: () => Promise.resolve(vault),
+    policy: policyFrom(config),
+    origin: new URL(config.publicUrl).origin,
+    appName: 'OpenUsecase',
+    offers,
+    isServerAdmin: (request) => requirePerson(request).isServerAdmin,
+  });
+  publishVersionOnStart(app, {
+    db: pool,
+    vault: () => Promise.resolve(vault),
+    offer: offers[0],
+    policy: policyFrom(config),
+    appName: 'OpenUsecase',
+    version: config.appVersion,
   });
   const glossary = new GlossaryReader(policyFrom(config), vault);
   registerGlossaryRoutes(app, pool, glossary, vault, policyFrom(config));
@@ -78,7 +81,7 @@ export async function buildApp(config: Config, pool: Pool): Promise<FastifyInsta
     if (!actor) return refuseMcp(reply, 401, 'That token is missing, unknown or revoked.');
     if (actor.kind !== 'agent') return refuseMcp(reply, 403, 'Only agents can use MCP.');
     const linked = await hasGlossary(pool, actor.teamId);
-    const server = createMcpServer(pool, actor, config.version, glossary, linked);
+    const server = createMcpServer(pool, actor, config.appVersion, glossary, linked);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

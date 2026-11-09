@@ -1662,10 +1662,10 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       // A server connection, its public key and sealed token stay out of exports.
       await withScope(pool, { bypass: true }, (db) =>
         db.query(
-          `INSERT INTO server_integrations (kind, url, public_key, deploy_token_sealed)
+          `INSERT INTO server_integrations (kind, url, public_key, deploy_token_encrypted)
            VALUES ('openversion', 'https://versions.example.com', 'pk_export_check_0123456789', 'sealed-export-check')
            ON CONFLICT (kind) DO UPDATE SET url = EXCLUDED.url, public_key = EXCLUDED.public_key,
-             deploy_token_sealed = EXCLUDED.deploy_token_sealed`,
+             deploy_token_encrypted = EXCLUDED.deploy_token_encrypted`,
         ),
       );
       const withConnection = (await http({ cookie: adminA }, 'GET', '/api/t/acme/export')).body;
