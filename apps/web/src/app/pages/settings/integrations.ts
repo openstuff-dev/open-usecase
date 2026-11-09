@@ -22,6 +22,7 @@ import {
 } from '@openstuff-dev/ui-angular';
 import { Api, errorText } from '../../core/api';
 import { onReturn } from '../../core/loading';
+import { ServerConnections } from './server-connections';
 
 /** Other OpenStuff apps this team connects to. Today: the OpenPurpose glossary. */
 @Component({
@@ -33,6 +34,7 @@ import { onReturn } from '../../core/loading';
     Control,
     Field,
     SectionHeader,
+    ServerConnections,
     SettingCard,
     SettingCardFooter,
   ],
@@ -45,59 +47,65 @@ import { onReturn } from '../../core/loading';
       description="Connect this app to the rest of OpenStuff. Each one is optional, and nothing changes until you connect it."
     ></header>
 
-    @if (error(); as error) {
-      <os-callout tone="danger" title="That didn’t work">{{ error }}</os-callout>
+    @if (serverAdmin()) {
+      <app-server-connections />
     }
 
-    <section
-      os-setting-card
-      title="OpenPurpose"
-      description="OpenPurpose holds your glossary. With this link, agents are told to keep to its terms, and the inbox marks them. Without it, everything else works the same."
-    >
-      @if (link(); as link) {
-        <p class="connected">
-          Connected to {{ link }}
-          <button
-            os-button
-            size="sm"
-            variant="ghost"
-            tone="danger"
-            type="button"
-            (click)="removeLink()"
-          >
-            Remove link
-          </button>
-        </p>
+    @if (team() && admin()) {
+      @if (error(); as error) {
+        <os-callout tone="danger" title="That didn’t work">{{ error }}</os-callout>
       }
-      <form class="fields" (ngSubmit)="saveLink()">
-        <os-field label="OpenPurpose URL" hint="Such as https://purpose.example.com">
-          <input os-input type="url" name="openpurposeUrl" required [(ngModel)]="linkUrl" />
-        </os-field>
-        <os-field
-          label="Token"
-          hint="An OpenPurpose token that can read this team’s projects. It’s stored encrypted."
-        >
-          <input
-            os-input
-            type="password"
-            name="openpurposeToken"
-            autocomplete="off"
-            required
-            [(ngModel)]="linkToken"
-          />
-        </os-field>
-        <div>
-          <button
-            os-button
-            variant="primary"
-            type="submit"
-            [disabled]="!linkUrl.trim() || !linkToken.trim()"
+
+      <section
+        os-setting-card
+        title="OpenPurpose"
+        description="OpenPurpose holds your glossary. With this link, agents are told to keep to its terms, and the inbox marks them. Without it, everything else works the same."
+      >
+        @if (link(); as link) {
+          <p class="connected">
+            Connected to {{ link }}
+            <button
+              os-button
+              size="sm"
+              variant="ghost"
+              tone="danger"
+              type="button"
+              (click)="removeLink()"
+            >
+              Remove link
+            </button>
+          </p>
+        }
+        <form class="fields" (ngSubmit)="saveLink()">
+          <os-field label="OpenPurpose URL" hint="Such as https://purpose.example.com">
+            <input os-input type="url" name="openpurposeUrl" required [(ngModel)]="linkUrl" />
+          </os-field>
+          <os-field
+            label="Token"
+            hint="An OpenPurpose token that can read this team’s projects. It’s stored encrypted."
           >
-            {{ link() ? 'Update link' : 'Add link' }}
-          </button>
-        </div>
-      </form>
-    </section>
+            <input
+              os-input
+              type="password"
+              name="openpurposeToken"
+              autocomplete="off"
+              required
+              [(ngModel)]="linkToken"
+            />
+          </os-field>
+          <div>
+            <button
+              os-button
+              variant="primary"
+              type="submit"
+              [disabled]="!linkUrl.trim() || !linkToken.trim()"
+            >
+              {{ link() ? 'Update link' : 'Add link' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    }
   `,
   styles: `
     .connected {
@@ -117,7 +125,10 @@ import { onReturn } from '../../core/loading';
   `,
 })
 export class Integrations {
-  readonly team = input.required<string>();
+  /** The team in the address. Empty outside one, where only server connections show. */
+  readonly team = input('');
+  readonly admin = input(false);
+  readonly serverAdmin = input(false);
   private readonly api = inject(Api);
   private readonly confirm = inject(ConfirmDialog);
   private readonly toaster = inject(Toaster);
@@ -128,9 +139,13 @@ export class Integrations {
 
   constructor() {
     effect(() => {
-      void this.load(this.team());
+      if (this.team() && this.admin()) void this.load(this.team());
     });
-    inject(DestroyRef).onDestroy(onReturn(() => void this.load(this.team())));
+    inject(DestroyRef).onDestroy(
+      onReturn(() => {
+        if (this.team() && this.admin()) void this.load(this.team());
+      }),
+    );
   }
 
   private get base(): string {

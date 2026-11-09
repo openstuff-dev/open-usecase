@@ -96,7 +96,11 @@ const GROUP_ORDER: readonly SettingsGroupKey[] = ['you', 'team', 'server'];
             <app-agents [team]="team()" />
           }
           @case ('integrations') {
-            <app-integrations [team]="team()" />
+            <app-integrations
+              [team]="team()"
+              [admin]="who().role === 'admin'"
+              [serverAdmin]="who().isServerAdmin"
+            />
           }
           @case ('data') {
             <app-data [team]="team()" />
