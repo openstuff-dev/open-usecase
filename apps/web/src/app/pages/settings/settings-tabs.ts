@@ -51,7 +51,13 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { id: 'projects', label: 'Projects', icon: iconProjects, group: 'team', visible: admin },
   { id: 'members', label: 'Members', icon: iconMembers, group: 'team', visible: admin },
   { id: 'agents', label: 'Agents and CI', icon: iconAgents, group: 'team', visible: admin },
-  { id: 'integrations', label: 'Integrations', icon: iconIntegrations, group: 'team', visible: admin },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    icon: iconIntegrations,
+    group: 'team',
+    visible: (who) => admin(who) || who.isServerAdmin,
+  },
   { id: 'data', label: 'Export and import', icon: iconData, group: 'team', visible: admin },
   { id: 'teams', label: 'Teams', icon: iconTeams, group: 'server', visible: (who) => who.isServerAdmin },
 ];
