@@ -166,8 +166,8 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     await pool.end();
   });
 
-  describe('UC-1: an agent proposes a use case', () => {
-    it('UC-1/S1 a valid proposal returns its IDs, is proposed and reaches the inbox', async () => {
+  describe('TUC-1: an agent proposes a use case', () => {
+    it('TUC-1/S1 a valid proposal returns its IDs, is proposed and reaches the inbox', async () => {
       const { text, isError } = await call(agentA.token, 'propose_usecase', {
         remote: REMOTE_A,
         title: 'Change the colour',
@@ -198,7 +198,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       ]);
     });
 
-    it('UC-1/S2 Gherkin that does not parse is refused with a reason, and nothing arrives', async () => {
+    it('TUC-1/S2 Gherkin that does not parse is refused with a reason, and nothing arrives', async () => {
       const before = await useCaseCount();
       const { text, isError } = await call(agentA.token, 'propose_usecase', {
         remote: REMOTE_A,
@@ -211,7 +211,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inbox(memberA)).some((i) => i.title === 'Broken')).toBe(false);
     });
 
-    it('UC-1/S2 a refused proposal does not use up a use case number', async () => {
+    it('TUC-1/S2 a refused proposal does not use up a use case number', async () => {
       const first = Number((await propose()).slice(3));
       await call(agentA.token, 'propose_usecase', { remote: REMOTE_A, title: 'Broken', gherkin: 'nope' });
       expect(Number((await propose()).slice(3))).toBe(first + 1);
@@ -220,7 +220,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     it.each([
       ['no token', undefined],
       ['an unknown token', 'uc_not-a-real-token'],
-    ])('UC-1/S3 a proposal with %s is refused, and nothing arrives', async (_name, token) => {
+    ])('TUC-1/S3 a proposal with %s is refused, and nothing arrives', async (_name, token) => {
       const before = await useCaseCount();
       const response = await fetch(`${base}/mcp`, {
         method: 'POST',
@@ -243,7 +243,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await useCaseCount()).toBe(before);
     });
 
-    it('UC-1/S3 a revoked token is refused', async () => {
+    it('TUC-1/S3 a revoked token is refused', async () => {
       const temp = await createAgent(pool, must((await withScope(pool, { bypass: true }, (db) => db.query<{ id: string }>(`SELECT id FROM teams WHERE slug = 'acme'`))).rows[0]).id, 'Temp');
       await expect(agent(temp.token)).resolves.toBeDefined();
       const revoked = await http({ cookie: adminA }, 'DELETE', `/api/t/acme/tokens/${temp.tokenId}`);
@@ -252,8 +252,8 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     });
   });
 
-  describe('UC-2: a person reviews a proposal', () => {
-    it('UC-2/S1 a reviewer sees everything they approve, not only names and steps', async () => {
+  describe('TUC-2: a person reviews a proposal', () => {
+    it('TUC-2/S1 a reviewer sees everything they approve, not only names and steps', async () => {
       const ref = await propose(`Feature: Colours
   Only admins can change colours.
 
@@ -281,7 +281,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).toContain('red');
     });
 
-    it('UC-2/S1 a member approves a proposal, and it leaves the inbox', async () => {
+    it('TUC-2/S1 a member approves a proposal, and it leaves the inbox', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       const response = await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
@@ -299,14 +299,14 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(rows[0]?.decided_by).toBeTruthy();
     });
 
-    it('UC-2/S1 approving twice does not decide twice', async () => {
+    it('TUC-2/S1 approving twice does not decide twice', async () => {
       const { id } = await inboxItem(await propose());
       await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
       const again = await http({ cookie: adminA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
       expect(again.statusCode).toBe(409);
     });
 
-    it('UC-2/S1 an agent cannot approve, not even its own proposal', async () => {
+    it('TUC-2/S1 an agent cannot approve, not even its own proposal', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       const response = await http({ token: agentA.token }, 'POST', `/api/t/acme/usecases/${id}/approve`);
@@ -314,7 +314,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inboxItem(ref)).id).toBe(id);
     });
 
-    it('UC-2/S2 a member comments on a scenario and asks for changes', async () => {
+    it('TUC-2/S2 a member comments on a scenario and asks for changes', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       const comment = await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/comments`, {
@@ -332,7 +332,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
     });
 
-    it('UC-9/S4 asking for changes without saying what is refused, and changes nothing', async () => {
+    it('TUC-9/S4 asking for changes without saying what is refused, and changes nothing', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/comments`, {
@@ -351,7 +351,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(true);
     });
 
-    it('UC-9/S4 what the person typed reaches the use case, next to their comments', async () => {
+    it('TUC-9/S4 what the person typed reaches the use case, next to their comments', async () => {
       const { ref, id } = await changesRequested();
       const { rows } = await withScope(pool, { bypass: true }, (db) =>
         db.query<{ scenario_number: number | null; body: string }>(
@@ -366,7 +366,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(ref).toMatch(/^UC-/);
     });
 
-    it('UC-2/S2 a comment on a scenario the use case does not have is refused', async () => {
+    it('TUC-2/S2 a comment on a scenario the use case does not have is refused', async () => {
       const { id } = await inboxItem(await propose());
       const response = await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/comments`, {
         scenario: 99,
@@ -388,7 +388,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       return { ref, id };
     }
 
-    it('UC-2/S3 the agent revises: proposed again, new text in the inbox, comments kept', async () => {
+    it('TUC-2/S3 the agent revises: proposed again, new text in the inbox, comments kept', async () => {
       const { ref, id } = await changesRequested();
       const gherkin = `Feature: Change the colour
 
@@ -426,7 +426,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       ]);
     });
 
-    it('UC-2/S3 a different agent cannot revise it', async () => {
+    it('TUC-2/S3 a different agent cannot revise it', async () => {
       const { ref } = await changesRequested();
       const { text, isError } = await call(agentA2.token, 'revise_usecase', {
         remote: REMOTE_A,
@@ -439,7 +439,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
     });
 
-    it('UC-2/S3 a proposal still waiting for review cannot be revised', async () => {
+    it('TUC-2/S3 a proposal still waiting for review cannot be revised', async () => {
       const ref = await propose();
       const { isError, text } = await call(agentA.token, 'revise_usecase', {
         remote: REMOTE_A,
@@ -451,7 +451,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).toContain('only when changes are requested');
     });
 
-    it('UC-2/S3 a revision with a tag this use case never had is refused', async () => {
+    it('TUC-2/S3 a revision with a tag this use case never had is refused', async () => {
       const { ref } = await changesRequested();
       const { isError, text } = await call(agentA.token, 'revise_usecase', {
         remote: REMOTE_A,
@@ -463,7 +463,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).toContain('@S42');
     });
 
-    it('UC-2/S3 the agent can reply to a comment, on a scenario', async () => {
+    it('TUC-2/S3 the agent can reply to a comment, on a scenario', async () => {
       const ref = await propose();
       const { isError } = await call(agentA.token, 'comment_on_usecase', {
         remote: REMOTE_A,
@@ -478,20 +478,20 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     });
   });
 
-  describe('UC-3: teams and permissions stay apart', () => {
-    it("UC-3/S1 a member's inbox has only their own team", async () => {
+  describe('TUC-3: teams and permissions stay apart', () => {
+    it("TUC-3/S1 a member's inbox has only their own team", async () => {
       const ref = await propose(GHERKIN, agentB.token, REMOTE_B);
       expect((await inboxItem(ref, memberB, 'bravo')).proposedBy).toBe('Agent B');
       expect((await inbox(memberA)).every((i) => i.proposedBy !== 'Agent B')).toBe(true);
     });
 
-    it("UC-3/S1 asking for another team's inbox directly reads as not found", async () => {
+    it("TUC-3/S1 asking for another team's inbox directly reads as not found", async () => {
       await propose(GHERKIN, agentB.token, REMOTE_B);
       expect((await http({ cookie: memberA }, 'GET', '/api/t/bravo/inbox')).statusCode).toBe(404);
       expect((await http({ cookie: memberA }, 'GET', '/api/t/nobody/inbox')).statusCode).toBe(404);
     });
 
-    it("UC-3/S1 row-level security hides another team's rows even without a WHERE", async () => {
+    it("TUC-3/S1 row-level security hides another team's rows even without a WHERE", async () => {
       const ref = await propose(GHERKIN, agentB.token, REMOTE_B);
       const bravo = await inboxItem(ref, memberB, 'bravo');
       const acmeId = must(
@@ -512,7 +512,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await pool.query('SELECT 1 FROM use_cases')).rowCount).toBe(0);
     });
 
-    it("UC-3/S1 a member can't act on another team's use case through their own team", async () => {
+    it("TUC-3/S1 a member can't act on another team's use case through their own team", async () => {
       const ref = await propose(GHERKIN, agentB.token, REMOTE_B);
       const { id } = await inboxItem(ref, memberB, 'bravo');
       for (const path of [`/api/t/acme/usecases/${id}/approve`, `/api/t/bravo/usecases/${id}/approve`]) {
@@ -521,7 +521,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inboxItem(ref, memberB, 'bravo')).id).toBe(id);
     });
 
-    it("UC-3/S2 an agent told about another team's use case is told it wasn't found", async () => {
+    it("TUC-3/S2 an agent told about another team's use case is told it wasn't found", async () => {
       const ref = await propose(GHERKIN, agentB.token, REMOTE_B);
       const before = await inboxItem(ref, memberB, 'bravo');
       const revise = await call(agentA.token, 'revise_usecase', {
@@ -542,7 +542,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await inboxItem(ref, memberB, 'bravo')).toEqual(before);
     });
 
-    it('UC-3/S2 two teams can have the same remote and still stay apart', async () => {
+    it('TUC-3/S2 two teams can have the same remote and still stay apart', async () => {
       const bravoId = must(
         (await withScope(pool, { bypass: true }, (db) => db.query<{ id: string }>(`SELECT id FROM teams WHERE slug = 'bravo'`))).rows[0],
       ).id;
@@ -557,7 +557,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(comment.text).toBe(`${inBravo} wasn't found.`);
     });
 
-    it('UC-3/S3 an agent gets a 403 for every token and permission change, even its own', async () => {
+    it('TUC-3/S3 an agent gets a 403 for every token and permission change, even its own', async () => {
       const who = { token: agentA.token };
       const attempts = [
         await http(who, 'POST', `/api/t/acme/actors/${agentA.actorId}/tokens`),
@@ -585,7 +585,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       await expect(agent(agentA.token)).resolves.toBeDefined();
     });
 
-    it('UC-3/S3 MCP offers an agent no way to manage tokens or permissions', async () => {
+    it('TUC-3/S3 MCP offers an agent no way to manage tokens or permissions', async () => {
       const { tools } = await (await agent(agentA.token)).listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
         'claim_done',
@@ -602,7 +602,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       ]);
     });
 
-    it("UC-3/S3 a person who isn't an admin gets a 403 too, and an admin may", async () => {
+    it("TUC-3/S3 a person who isn't an admin gets a 403 too, and an admin may", async () => {
       const path = `/api/t/acme/actors/${agentA2.actorId}`;
       expect((await http({ cookie: memberA }, 'PATCH', path, { canReview: true })).statusCode).toBe(403);
       expect((await http({ cookie: adminA }, 'PATCH', path, { canReview: true })).statusCode).toBe(200);
@@ -612,7 +612,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     });
   });
 
-  describe('UC-4: an agent reads a use case', () => {
+  describe('TUC-4: an agent reads a use case', () => {
     const get = (ref: string, token = agentA.token, remote = REMOTE_A) =>
       call(token, 'get_usecase', { remote, id: ref });
     const approve = async (ref: string) => {
@@ -620,7 +620,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/approve`);
     };
 
-    it('UC-4/S1 an approved use case gives its status and text, and says it is ready', async () => {
+    it('TUC-4/S1 an approved use case gives its status and text, and says it is ready', async () => {
       const ref = await propose();
       await approve(ref);
       const { text, isError } = await get(ref);
@@ -631,7 +631,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).toContain('@S1');
     });
 
-    it('UC-4/S2 a use case still waiting gives its text, and says clearly not to build', async () => {
+    it('TUC-4/S2 a use case still waiting gives its text, and says clearly not to build', async () => {
       const ref = await propose();
       const { text } = await get(ref);
       expect(text).toContain('Status: proposed.');
@@ -640,7 +640,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).not.toContain('ready to build');
     });
 
-    it('UC-4/S3 after a change request it says to revise first, with each comment and its scenario', async () => {
+    it('TUC-4/S3 after a change request it says to revise first, with each comment and its scenario', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/comments`, {
@@ -659,7 +659,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).not.toContain('ready to build');
     });
 
-    it('UC-4/S3 an agent reads the text of the newest revision after revising', async () => {
+    it('TUC-4/S3 an agent reads the text of the newest revision after revising', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/request-changes`, {
@@ -677,12 +677,12 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).not.toContain('Scenario: Change it');
     });
 
-    it('UC-4/S1 a use case that does not exist reads as not found', async () => {
+    it('TUC-4/S1 a use case that does not exist reads as not found', async () => {
       expect(await get('UC-999999')).toMatchObject({ isError: true, text: "UC-999999 wasn't found." });
       expect(await get('nonsense')).toMatchObject({ isError: true });
     });
 
-    it('UC-4/S4 search finds use cases by their words, each with its ID and status', async () => {
+    it('TUC-4/S4 search finds use cases by their words, each with its ID and status', async () => {
       const word = `zebra${String(Date.now())}`;
       const gherkin = `Feature: Stripes\n\n  Scenario: Show the ${word}s\n    When I look\n    Then I see them\n`;
       const waiting = await propose(gherkin);
@@ -696,7 +696,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text.trim().split('\n')).toHaveLength(2);
     });
 
-    it('UC-4/S4 search can ask for one status', async () => {
+    it('TUC-4/S4 search can ask for one status', async () => {
       const word = `quagga${String(Date.now())}`;
       const gherkin = `Feature: Stripes\n\n  Scenario: Show the ${word}\n    When I look\n    Then I see it\n`;
       const waiting = await propose(gherkin);
@@ -711,7 +711,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).not.toContain(`${waiting} `);
     });
 
-    it('UC-4/S4 quotes and symbols in a search are only words, and no words is refused', async () => {
+    it('TUC-4/S4 quotes and symbols in a search are only words, and no words is refused', async () => {
       const odd = await call(agentA.token, 'search_usecases', { query: `nothing' & !:* (here` });
       expect(odd).toMatchObject({ isError: false, text: 'No use cases match.' });
       expect(await call(agentA.token, 'search_usecases', { query: '!!!' })).toMatchObject({
@@ -720,7 +720,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       });
     });
 
-    it('UC-4/S4 an agent gets nothing from another team, by search or by ID', async () => {
+    it('TUC-4/S4 an agent gets nothing from another team, by search or by ID', async () => {
       const word = `okapi${String(Date.now())}`;
       const gherkin = `Feature: Forest\n\n  Scenario: Show the ${word}\n    When I look\n    Then I see it\n`;
       const inBravo = await propose(gherkin, agentB.token, REMOTE_B);
@@ -735,15 +735,15 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     });
   });
 
-  describe('UC-5: what an agent is told (the behaviour itself is proven by a real agent)', () => {
-    it('UC-5/S1 the server tells a connecting agent to end its turn, and not to poll or build', async () => {
+  describe('TUC-5: what an agent is told (the behaviour itself is proven by a real agent)', () => {
+    it('TUC-5/S1 the server tells a connecting agent to end its turn, and not to poll or build', async () => {
       const instructions = must((await agent(agentA.token)).getInstructions(), 'instructions');
       expect(instructions).toContain('end your turn and tell the user');
       expect(instructions).toContain("Don't keep checking its status");
       expect(instructions).toContain("don't start building");
     });
 
-    it('UC-5/S2 the server tells it to fetch the status on return, and to revise before building', async () => {
+    it('TUC-5/S2 the server tells it to fetch the status on return, and to revise before building', async () => {
       const instructions = must((await agent(agentA.token)).getInstructions(), 'instructions');
       expect(instructions).toContain('Call get_usecase once. Build only if the status is approved.');
       expect(instructions).toContain('If changes were requested');
@@ -767,7 +767,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       return { ref, id };
     }
 
-    it('UC-10/S1 a person rejects with a reason: it leaves the inbox and stays searchable', async () => {
+    it('TUC-10/S1 a person rejects with a reason: it leaves the inbox and stays searchable', async () => {
       const word = `tapir${String(Date.now())}`;
       const ref = await propose(`Feature: F\n\n  Scenario: ${word}\n    When I look\n    Then I see\n`);
       const { id } = await inboxItem(ref);
@@ -782,14 +782,14 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(read.text).toContain('We decided against this.');
     });
 
-    it('UC-10/S2 rejecting without a reason is refused', async () => {
+    it('TUC-10/S2 rejecting without a reason is refused', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       expect((await post(`${id}/reject`, {})).statusCode).toBe(400);
       expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(true);
     });
 
-    it('UC-10/S3 a rejected use case cannot be revised', async () => {
+    it('TUC-10/S3 a rejected use case cannot be revised', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await post(`${id}/reject`, { reason: 'No.' });
@@ -803,7 +803,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(revised.text).toContain('was rejected');
     });
 
-    it('UC-10/S4 an agent cannot reject or retire: no tool, and a token is refused', async () => {
+    it('TUC-10/S4 an agent cannot reject or retire: no tool, and a token is refused', async () => {
       const { id } = await inboxItem(await propose());
       const { tools } = await (await agent(agentA.token)).listTools();
       expect(tools.map((t) => t.name)).not.toContain('reject_usecase');
@@ -819,7 +819,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       }
     });
 
-    it('UC-11/S1 changing a done use case makes a new revision, and the live one stays in force', async () => {
+    it('TUC-11/S1 changing a done use case makes a new revision, and the live one stays in force', async () => {
       const { ref, id } = await done();
       expect((await get(ref)).text).toContain('Status: done.');
       const revised = await call(agentA2.token, 'revise_usecase', {
@@ -842,7 +842,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await get(ref)).text).toContain('Revision 2 is approved.');
     });
 
-    it('UC-12/S1 an agent files a retirement: still done, and in the inbox with the reason', async () => {
+    it('TUC-12/S1 an agent files a retirement: still done, and in the inbox with the reason', async () => {
       const { ref } = await done();
       const filed = await call(agentA.token, 'request_retirement', {
         remote: REMOTE_A,
@@ -857,7 +857,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       });
     });
 
-    it('UC-12/S1 only a done use case can have a retirement filed', async () => {
+    it('TUC-12/S1 only a done use case can have a retirement filed', async () => {
       const filed = await call(agentA.token, 'request_retirement', {
         remote: REMOTE_A,
         id: await propose(),
@@ -867,7 +867,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(filed.text).toContain("isn't done");
     });
 
-    it('UC-12/S2 a person retires it: it stays readable, and agents are told not to build it', async () => {
+    it('TUC-12/S2 a person retires it: it stays readable, and agents are told not to build it', async () => {
       const { ref, id } = await done();
       const response = await post(`${id}/retire`, { reason: 'Removed in 2.0.' });
       expect(response.json()).toEqual({ status: 'retired' });
@@ -883,7 +883,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(revised.text).toContain('is retired');
     });
 
-    it('UC-12/S3 a person keeps it: the request goes, and it stays done', async () => {
+    it('TUC-12/S3 a person keeps it: the request goes, and it stays done', async () => {
       const { ref, id } = await done();
       await call(agentA.token, 'request_retirement', { remote: REMOTE_A, id: ref, reason: 'Unused.' });
       expect((await post(`${id}/keep`)).json()).toEqual({ status: 'done' });
@@ -891,7 +891,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await post(`${id}/keep`)).statusCode).toBe(409);
     });
 
-    it('UC-12/S4 a number is never used again, after rejection or retirement', async () => {
+    it('TUC-12/S4 a number is never used again, after rejection or retirement', async () => {
       const first = await propose();
       await post(`${(await inboxItem(first)).id}/reject`, { reason: 'No.' });
       const { ref: second, id } = await done();
@@ -902,7 +902,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(number(third)).toBeGreaterThan(number(second));
     });
 
-    it('UC-13/S1 comments left when approving reach the agent, with a prompt to raise them', async () => {
+    it('TUC-13/S1 comments left when approving reach the agent, with a prompt to raise them', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await post(`${id}/comments`, { scenario: 2, body: 'Hmm.. well.. Alright?' });
@@ -912,14 +912,14 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(read).toContain('Hmm.. well.. Alright?');
     });
 
-    it('UC-13/S2 approving without comments adds no such prompt', async () => {
+    it('TUC-13/S2 approving without comments adds no such prompt', async () => {
       const ref = await propose();
       await post(`${(await inboxItem(ref)).id}/approve`);
       expect((await get(ref)).text).not.toContain('left comments');
     });
   });
 
-  describe('UC-14: agent review modes', () => {
+  describe('TUC-14: agent review modes', () => {
     const setMode = (actorId: string, body: object) =>
       http({ cookie: adminA }, 'PATCH', `/api/t/acme/actors/${actorId}`, body);
     const review = (token: string, ref: string, decision: string, comment?: string) =>
@@ -939,7 +939,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       return createAgent(pool, must(rows[0]).id, name);
     };
 
-    it('UC-14/S1 with human_approval, a person approves, and a reviewer agent can not', async () => {
+    it('TUC-14/S1 with human_approval, a person approves, and a reviewer agent can not', async () => {
       const reviewer = await fresh('Reviewer one');
       await setMode(reviewer.actorId, { canReview: true });
       const ref = await propose();
@@ -949,7 +949,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await method(ref)).toMatchObject({ state: 'proposed', approval_method: null });
     });
 
-    it('UC-14/S2 with agent_review, a different reviewer approves, and the record says so', async () => {
+    it('TUC-14/S2 with agent_review, a different reviewer approves, and the record says so', async () => {
       const proposer = await fresh('Proposer two');
       const reviewer = await fresh('Reviewer two');
       await setMode(proposer.actorId, { review: 'agent_review' });
@@ -961,7 +961,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await method(ref)).toEqual({ state: 'approved', approval_method: 'agent_review' });
     });
 
-    it('UC-14/S3 agent_review refuses a proposal without the user request', async () => {
+    it('TUC-14/S3 agent_review refuses a proposal without the user request', async () => {
       const proposer = await fresh('Proposer three');
       await setMode(proposer.actorId, { review: 'agent_review' });
       const before = await useCaseCount();
@@ -975,7 +975,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await useCaseCount()).toBe(before);
     });
 
-    it('UC-14/S4 an agent can not approve its own proposal, also through a reworded revision', async () => {
+    it('TUC-14/S4 an agent can not approve its own proposal, also through a reworded revision', async () => {
       const proposer = await fresh('Proposer four');
       const other = await fresh('Reviewer four');
       await setMode(proposer.actorId, { review: 'agent_review', canReview: true });
@@ -995,7 +995,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await method(ref)).toMatchObject({ state: 'proposed' });
     });
 
-    it('UC-14/S5 reviewing needs reviewer rights, and asking for changes needs a comment', async () => {
+    it('TUC-14/S5 reviewing needs reviewer rights, and asking for changes needs a comment', async () => {
       const proposer = await fresh('Proposer five');
       const other = await fresh('Reviewer five');
       await setMode(proposer.actorId, { review: 'agent_review' });
@@ -1005,7 +1005,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await review(other.token, ref, 'request_changes')).text).toContain('what should change');
     });
 
-    it('UC-14/S6 auto_approve approves on arrival, and the record says nobody checked', async () => {
+    it('TUC-14/S6 auto_approve approves on arrival, and the record says nobody checked', async () => {
       const proposer = await fresh('Proposer six');
       await setMode(proposer.actorId, { review: 'auto_approve' });
       const { text } = await call(proposer.token, 'propose_usecase', {
@@ -1020,7 +1020,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inbox(memberA)).some((i) => i.ref === ref)).toBe(false);
     });
 
-    it('UC-14/S7 auto_approve still can not retire: the request waits for a person', async () => {
+    it('TUC-14/S7 auto_approve still can not retire: the request waits for a person', async () => {
       const proposer = await fresh('Proposer seven');
       await setMode(proposer.actorId, { review: 'auto_approve' });
       const { text } = await call(proposer.token, 'propose_usecase', {
@@ -1042,7 +1042,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inboxItem(ref)).retirement).toMatchObject({ reason: 'Gone.' });
     });
 
-    it('UC-14/S8 an agent gets a 403 when it tries to change its own mode', async () => {
+    it('TUC-14/S8 an agent gets a 403 when it tries to change its own mode', async () => {
       const proposer = await fresh('Proposer eight');
       const response = await http(
         { token: proposer.token },
@@ -1054,11 +1054,11 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     });
   });
 
-  describe('UC-6: a person sets up a team', () => {
+  describe('TUC-6: a person sets up a team', () => {
     const admin = (method: string, path: string, payload?: object) =>
       http({ cookie: adminA }, method, `/api/t/acme${path}`, payload);
 
-    it('UC-6/S1 an admin adds a project and a repository, and agents propose into it', async () => {
+    it('TUC-6/S1 an admin adds a project and a repository, and agents propose into it', async () => {
       const remote = 'https://github.com/acme/settings-site.git';
       const response = await admin('POST', '/projects', { name: 'Settings site', remote });
       expect(response.statusCode).toBe(201);
@@ -1083,7 +1083,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       ]);
     });
 
-    it('UC-6/S1 a bad remote or an unknown Gherkin language is refused', async () => {
+    it('TUC-6/S1 a bad remote or an unknown Gherkin language is refused', async () => {
       expect((await admin('POST', '/projects', { name: 'X', remote: 'nonsense' })).statusCode).toBe(400);
       expect(
         (await admin('POST', '/projects', { name: 'Y', remote: 'https://github.com/a/y.git', language: 'xx' }))
@@ -1091,7 +1091,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       ).toBe(400);
     });
 
-    it('UC-6/S2 an admin adds an agent, and sees its token once', async () => {
+    it('TUC-6/S2 an admin adds an agent, and sees its token once', async () => {
       const response = await admin('POST', '/actors', { name: 'New agent', kind: 'agent' });
       expect(response.statusCode).toBe(201);
       const { token, actorId } = response.json<{ token: string; actorId: string }>();
@@ -1101,7 +1101,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(settings).not.toContain(token);
     });
 
-    it('UC-6/S3 revoking a token stops it working', async () => {
+    it('TUC-6/S3 revoking a token stops it working', async () => {
       const { token, actorId } = (await admin('POST', '/actors', { name: 'Short lived', kind: 'agent' }))
         .json<{ token: string; actorId: string }>();
       const settings = (await admin('GET', '/settings')).json<TeamSettings>();
@@ -1115,7 +1115,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(refused.status).toBe(401);
     });
 
-    it('UC-6/S4 a server admin adds a team and a member, who can sign in and see the inbox', async () => {
+    it('TUC-6/S4 a server admin adds a team and a member, who can sign in and see the inbox', async () => {
       const serverAdmin = await signIn('root@server.test', 'root-password');
       const created = await http({ cookie: serverAdmin }, 'POST', '/api/admin/teams', { name: 'New Co' });
       expect(created.statusCode).toBe(201);
@@ -1132,13 +1132,13 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await inbox(nora, slug))).toEqual([]);
     });
 
-    it('UC-6/S4 only a server admin adds teams, and only a team admin reaches settings', async () => {
+    it('TUC-6/S4 only a server admin adds teams, and only a team admin reaches settings', async () => {
       expect((await http({ cookie: adminA }, 'POST', '/api/admin/teams', { name: 'Nope' })).statusCode).toBe(403);
       expect((await http({ cookie: memberA }, 'GET', '/api/t/acme/settings')).statusCode).toBe(403);
       expect((await http({ token: agentA.token }, 'GET', '/api/t/acme/settings')).statusCode).toBe(403);
     });
 
-    it('UC-6/S4 an admin changes a role and removes a member, but not themselves', async () => {
+    it('TUC-6/S4 an admin changes a role and removes a member, but not themselves', async () => {
       const { accountId } = (await admin('POST', '/members', {
         email: 'temp@acme.test',
         name: 'Temp',
@@ -1215,7 +1215,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       });
     });
 
-    it('UC-15/S1 a report with tagged tests makes scenarios pass, and the file is not stored', async () => {
+    it('TUC-15/S1 a report with tagged tests makes scenarios pass, and the file is not stored', async () => {
       const { ref } = await approved();
       const response = await report(junit({ [`${ref}/S1 changes it`]: 'pass', [`${ref}/S2 refuses`]: 'pass' }));
       expect(response.statusCode).toBe(200);
@@ -1232,7 +1232,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(columns.rows).toEqual([]);
     });
 
-    it('UC-15/S2 a repeat report adds no history', async () => {
+    it('TUC-15/S2 a repeat report adds no history', async () => {
       const { ref } = await approved();
       const xml = junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' });
       await report(xml);
@@ -1242,7 +1242,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await eventsOf(ref)).toEqual(first);
     });
 
-    it('UC-15/S3 a deleted or skipped test becomes no evidence', async () => {
+    it('TUC-15/S3 a deleted or skipped test becomes no evidence', async () => {
       const { ref } = await approved();
       await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
       await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'skip' }));
@@ -1253,7 +1253,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).toContain('Health: no evidence.');
     });
 
-    it('UC-15/S4 one failing repository makes the scenario fail', async () => {
+    it('TUC-15/S4 one failing repository makes the scenario fail', async () => {
       const { ref } = await approved();
       await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
       await report(junit({ [`${ref}/S1 a`]: 'fail' }), { remote: REMOTE_C });
@@ -1263,14 +1263,14 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await eventsOf(ref)).toContainEqual({ scenario_number: 1, health: 'failing' });
     });
 
-    it('UC-15/S5 suites do not overwrite each other', async () => {
+    it('TUC-15/S5 suites do not overwrite each other', async () => {
       const { ref } = await approved();
       await report(junit({ [`${ref}/S1 a`]: 'pass' }), { suite: 'unit' });
       await report(junit({ [`${ref}/S2 b`]: 'pass' }), { suite: 'e2e' });
       expect(await get(ref)).toContain('Health: passing.');
     });
 
-    it('UC-15/S6 a report from another branch is refused, and changes nothing', async () => {
+    it('TUC-15/S6 a report from another branch is refused, and changes nothing', async () => {
       const { ref } = await approved();
       const response = await report(junit({ [`${ref}/S1 a`]: 'pass' }), { branch: 'feature/x' });
       expect(response.statusCode).toBe(409);
@@ -1278,7 +1278,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await get(ref)).toContain(`${ref}/S1: no evidence`);
     });
 
-    it('UC-15/S7 an unknown or retired ID does not fail, and the answer lists it', async () => {
+    it('TUC-15/S7 an unknown or retired ID does not fail, and the answer lists it', async () => {
       const { ref, id } = await approved();
       await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/retire`, { reason: 'Gone.' });
       const response = await report(junit({ 'UC-999999/S1 old': 'pass', [`${ref}/S1 a`]: 'pass' }));
@@ -1288,7 +1288,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       );
     });
 
-    it('UC-15/S8 only a CI token can upload, and bad XML is refused', async () => {
+    it('TUC-15/S8 only a CI token can upload, and bad XML is refused', async () => {
       expect((await report('<testsuites/>', {}, agentA.token)).statusCode).toBe(403);
       expect((await http({ cookie: memberA }, 'POST', '/api/v1/reports', {})).statusCode).toBe(401);
       expect((await report('not xml')).statusCode).toBe(400);
@@ -1300,7 +1300,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(refused.status).toBe(403);
     });
 
-    it('UC-15/S9 a report takes a small, fixed number of database round trips', async () => {
+    it('TUC-15/S9 a report takes a small, fixed number of database round trips', async () => {
       const { rows } = await pool.query<{ id: string }>(`SELECT id FROM teams WHERE slug = 'acme'`);
       const teamId = must(rows[0]).id;
       const { ref } = await approved();
@@ -1321,7 +1321,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       });
     });
 
-    it('UC-16/S1 a claimed use case goes live on the next good report: done, passing', async () => {
+    it('TUC-16/S1 a claimed use case goes live on the next good report: done, passing', async () => {
       const { ref } = await approved();
       const xml = junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' });
       expect((await claim(ref)).isError).toBe(false);
@@ -1332,7 +1332,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).toContain('Status: done. Health: passing.');
     });
 
-    it('UC-16/S2 breaking its test reads done, failing, and the status stays', async () => {
+    it('TUC-16/S2 breaking its test reads done, failing, and the status stays', async () => {
       const { ref } = await approved();
       await claim(ref);
       await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
@@ -1340,14 +1340,14 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await get(ref)).toContain('Status: done. Health: failing.');
     });
 
-    it('UC-16/S3 passing tests alone do not make an approved use case go live', async () => {
+    it('TUC-16/S3 passing tests alone do not make an approved use case go live', async () => {
       const { ref } = await approved();
       const response = await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
       expect(response.json<{ wentLive: string[] }>().wentLive).toEqual([]);
       expect(await get(ref)).toContain('Status: approved.');
     });
 
-    it('UC-16/S4 a new revision does not go live before its claim, and needs all its scenarios', async () => {
+    it('TUC-16/S4 a new revision does not go live before its claim, and needs all its scenarios', async () => {
       const { ref, id } = await approved();
       await claim(ref);
       await report(junit({ [`${ref}/S1 a`]: 'pass', [`${ref}/S2 b`]: 'pass' }));
@@ -1389,13 +1389,13 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).not.toContain('The live text');
     });
 
-    it('UC-16/S5 only the latest approved revision can be claimed', async () => {
+    it('TUC-16/S5 only the latest approved revision can be claimed', async () => {
       const claimed = await claim(await propose());
       expect(claimed).toMatchObject({ isError: true });
       expect(claimed.text).toContain("can't be claimed");
     });
 
-    it('UC-16/S6 search filters by health and by how it was approved', async () => {
+    it('TUC-16/S6 search filters by health and by how it was approved', async () => {
       const word = `saola${String(Date.now())}`;
       const gherkin = `Feature: F\n\n  Scenario: ${word}\n    When I look\n    Then I see\n`;
       const ref = await propose(gherkin);
@@ -1412,18 +1412,18 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const check = (body: object, token = ci.token) =>
         http({ token }, 'POST', '/api/v1/check', { remote: REMOTE_A, ...body });
 
-      it('UC-17/S1 no IDs and no exemption fails', async () => {
+      it('TUC-17/S1 no IDs and no exemption fails', async () => {
         const { ok, problems } = (await check({})).json<CheckAnswer>();
         expect(ok).toBe(false);
         expect(problems[0]).toContain('Use cases: UC-142');
       });
 
-      it('UC-17/S2 an exemption passes, and the reason is visible', async () => {
+      it('TUC-17/S2 an exemption passes, and the reason is visible', async () => {
         const answer = (await check({ exemption: 'Dependency bump.' })).json<CheckAnswer>();
         expect(answer).toEqual({ ok: true, problems: [], notes: ['Exempt: Dependency bump.'] });
       });
 
-      it('UC-17/S3 an unapproved use case fails', async () => {
+      it('TUC-17/S3 an unapproved use case fails', async () => {
         const ref = await propose();
         const { ok, problems } = (await check({
           useCases: [ref],
@@ -1433,7 +1433,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         expect(problems[0]).toContain(`${ref} isn't approved`);
       });
 
-      it('UC-17/S4 a scenario with no tagged test fails, and a skipped test does not count', async () => {
+      it('TUC-17/S4 a scenario with no tagged test fails, and a skipped test does not count', async () => {
         const { ref } = await approved();
         const { ok, problems } = (await check({
           useCases: [ref],
@@ -1443,7 +1443,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         expect(problems).toEqual([`${ref}/S2 has no tagged test.`]);
       });
 
-      it('UC-17/S5 a test tagged only in another repository counts, and says so', async () => {
+      it('TUC-17/S5 a test tagged only in another repository counts, and says so', async () => {
         const { ref } = await approved();
         await report(junit({ [`${ref}/S2 b`]: 'pass' }), { remote: REMOTE_C });
         const answer = (await check({
@@ -1454,7 +1454,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         expect(answer.notes).toEqual([`${ref}/S2 is proven in another repository.`]);
       });
 
-      it('UC-17/S6 all scenarios tested passes, and the check stores nothing', async () => {
+      it('TUC-17/S6 all scenarios tested passes, and the check stores nothing', async () => {
         const { ref } = await approved();
         const answer = (await check({
           useCases: [ref],
@@ -1465,7 +1465,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         expect(await eventsOf(ref)).toEqual([]);
       });
 
-      it('UC-17/S7 an unknown ID fails, and only a CI token can run it', async () => {
+      it('TUC-17/S7 an unknown ID fails, and only a CI token can run it', async () => {
         const { problems } = (await check({ useCases: ['UC-999999'] })).json<CheckAnswer>();
         expect(problems).toEqual(["UC-999999 wasn't found in this project."]);
         expect((await check({}, agentA.token)).statusCode).toBe(403);
@@ -1495,7 +1495,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         .json<{ token: string }>();
     });
 
-    it('UC-18/S1 every use case shows with status, health and how it was approved', async () => {
+    it('TUC-18/S1 every use case shows with status, health and how it was approved', async () => {
       const waiting = await propose();
       const decided = await propose();
       const { id } = await inboxItem(decided);
@@ -1514,7 +1514,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       });
     });
 
-    it('UC-18/S2 another team reads as not found, in the list and by ID', async () => {
+    it('TUC-18/S2 another team reads as not found, in the list and by ID', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       const bravo = (await http({ cookie: memberB }, 'GET', '/api/t/bravo/catalogue')).json<Catalogue>();
@@ -1524,7 +1524,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it('UC-18/S3 a use case shows scenarios with evidence, revisions and history', async () => {
+    it('TUC-18/S3 a use case shows scenarios with evidence, revisions and history', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(id, 'approve');
@@ -1548,7 +1548,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(useCase.history).toMatchObject([{ scenario: 1, health: 'passing', commit: 'cafe1234' }]);
     });
 
-    it('UC-18/S4 a done use case with a newer revision shows both', async () => {
+    it('TUC-18/S4 a done use case with a newer revision shows both', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(id, 'approve');
@@ -1573,7 +1573,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await page()).find((i) => i.id === id)).toMatchObject({ pending: true, status: 'done' });
     });
 
-    it('UC-19/S1 a person checks a scenario by hand: it counts, and it is labelled', async () => {
+    it('TUC-19/S1 a person checks a scenario by hand: it counts, and it is labelled', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(id, 'approve');
@@ -1589,7 +1589,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(read.text).toContain('verified by hand by Mia');
     });
 
-    it('UC-19/S2 a check needs a note, and a token can not make one', async () => {
+    it('TUC-19/S2 a check needs a note, and a token can not make one', async () => {
       const { id } = await inboxItem(await propose());
       expect((await decide(`${id}/scenarios/1`, 'verify', {})).statusCode).toBe(400);
       const asAgent = await http(
@@ -1602,7 +1602,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await decide(`${id}/scenarios/99`, 'verify', { note: 'x' })).statusCode).toBe(404);
     });
 
-    it('UC-19/S3 a claimed use case can go live on hand checks', async () => {
+    it('TUC-19/S3 a claimed use case can go live on hand checks', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(id, 'approve');
@@ -1618,7 +1618,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await detail(id)).status).toBe('done');
     });
 
-    it('UC-19/S4 a changed meaning gets a new number, which has no hand check', async () => {
+    it('TUC-19/S4 a changed meaning gets a new number, which has no hand check', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(`${id}/scenarios/1`, 'verify', { note: 'Checked S1.' });
@@ -1633,7 +1633,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(useCase.scenarios).toMatchObject([{ number: 3, health: 'no_evidence', manual: [] }]);
     });
 
-    it('UC-19/S5 list_without_evidence names what nothing proves', async () => {
+    it('TUC-19/S5 list_without_evidence names what nothing proves', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(id, 'approve');
@@ -1643,7 +1643,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(text).not.toContain(`${ref}/S1:`);
     });
 
-    it('UC-20/S1 an export holds everything a team has, and never a token or password', async () => {
+    it('TUC-20/S1 an export holds everything a team has, and never a token or password', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(id, 'comments', { scenario: 1, body: 'Fine.' });
@@ -1675,7 +1675,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await http({ cookie: memberA }, 'GET', '/api/t/acme/export')).statusCode).toBe(403);
     });
 
-    it('UC-20/S2 importing into an empty team brings it back, IDs and records intact', async () => {
+    it('TUC-20/S2 importing into an empty team brings it back, IDs and records intact', async () => {
       const ref = await propose();
       const { id } = await inboxItem(ref);
       await decide(id, 'approve');
@@ -1700,7 +1700,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
     });
   });
 
-  describe('UC-8: use cases are grouped by area', () => {
+  describe('TUC-8: use cases are grouped by area', () => {
     const REMOTE_D = 'https://github.com/acme/billing.git';
     const GH = 'Feature: F\n\n  Scenario: A\n    When I look\n    Then I see\n';
     const projectSlug = 'billing-app';
@@ -1719,7 +1719,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       await http({ cookie: adminA }, 'POST', '/api/t/acme/projects', { name: 'Billing app', remote: REMOTE_D });
     });
 
-    it('UC-8/S3 a new area is proposed with a use case, seen as new, and added on approval', async () => {
+    it('TUC-8/S3 a new area is proposed with a use case, seen as new, and added on approval', async () => {
       const first = refOf((await proposeIn({ new_area: 'Billing' })).text);
       expect(await inProject(first)).toMatchObject({ area: 'Billing', newArea: true });
       expect((await call(agentA.token, 'list_areas', { remote: REMOTE_D })).text).toBe(
@@ -1729,12 +1729,12 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect((await call(agentA.token, 'list_areas', { remote: REMOTE_D })).text).toBe('Billing');
     });
 
-    it('UC-8/S1 an agent files a use case under an area, and the inbox shows it', async () => {
+    it('TUC-8/S1 an agent files a use case under an area, and the inbox shows it', async () => {
       const ref = refOf((await proposeIn({ area: 'billing' })).text);
       expect(await inProject(ref)).toMatchObject({ area: 'Billing', newArea: false });
     });
 
-    it('UC-8/S2 without an area, or with one that does not exist, it is refused and told which exist', async () => {
+    it('TUC-8/S2 without an area, or with one that does not exist, it is refused and told which exist', async () => {
       const before = await useCaseCount();
       const missing = await proposeIn({});
       expect(missing).toMatchObject({ isError: true });
@@ -1744,7 +1744,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await useCaseCount()).toBe(before);
     });
 
-    it('UC-8/S4 a person moves it: the ID and approval stay, and agents are refused', async () => {
+    it('TUC-8/S4 a person moves it: the ID and approval stay, and agents are refused', async () => {
       const ref = refOf((await proposeIn({ area: 'Billing' })).text);
       const id = await approve(ref);
       const moved = await http({ cookie: memberA }, 'PATCH', `/api/t/acme/usecases/${id}/area`, { area: 'Invoices' });
@@ -1756,7 +1756,7 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(asAgent.statusCode).toBe(403);
     });
 
-    it('UC-8/S3 a rejected use case does not add its new area', async () => {
+    it('TUC-8/S3 a rejected use case does not add its new area', async () => {
       const ref = refOf((await proposeIn({ new_area: 'Nope' })).text);
       const { id } = await inProject(ref);
       await http({ cookie: memberA }, 'POST', `/api/t/acme/usecases/${id}/reject`, { reason: 'No.' });

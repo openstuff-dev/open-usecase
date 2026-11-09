@@ -3,6 +3,11 @@
 Written before any code. Nothing is built until the user approves it. Status is noted under each use
 case. Phase 6 imports this file into the catalogue, keeping the IDs.
 
+**Tests name these as `TUC-<n>/S<n>`, not `UC-<n>`.** This file was never imported, and the hosted
+open-usecase project numbers its own use cases from UC-1, so a test named `UC-9/S1` here would
+report as evidence for the hosted UC-9. A test name only uses IDs of the project its repo reports
+to. If this file is ever imported, rename the tests to the IDs it gets.
+
 ## Task 1: an agent proposes, a person reviews
 
 ### UC-1: An agent proposes a use case
