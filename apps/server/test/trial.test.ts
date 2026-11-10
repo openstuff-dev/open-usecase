@@ -592,11 +592,9 @@ describe.skipIf(!url)('the trial against Postgres', () => {
         'comment_on_usecase',
         'get_usecase',
         'list_areas',
-        'list_terms',
         'list_without_evidence',
         'propose_usecase',
         'request_retirement',
-        'review_usecase',
         'revise_usecase',
         'search_usecases',
       ]);
@@ -1000,8 +998,13 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       const other = await fresh('Reviewer five');
       await setMode(proposer.actorId, { review: 'agent_review' });
       const ref = await propose(GHERKIN, proposer.token);
-      expect((await review(other.token, ref, 'approve')).text).toContain('reviewer rights');
+      const offered = async () =>
+        (await (await agent(other.token)).listTools()).tools.map((t) => t.name);
+      expect(await offered()).not.toContain('review_usecase');
+      expect(await review(other.token, ref, 'approve')).toMatchObject({ isError: true });
+      expect(await method(ref)).toMatchObject({ state: 'proposed' });
       await setMode(other.actorId, { canReview: true });
+      expect(await offered()).toContain('review_usecase');
       expect((await review(other.token, ref, 'request_changes')).text).toContain('what should change');
     });
 
@@ -1820,7 +1823,8 @@ describe.skipIf(!url)('the trial against Postgres', () => {
       expect(await terms()).toEqual({ state: 'off', terms: [] });
       const instructions = must((await agent(agentA.token)).getInstructions());
       expect(instructions).not.toContain('list_terms');
-      expect((await call(agentA.token, 'list_terms', { project: 'shop' })).text).toContain('no glossary');
+      const { tools } = await (await agent(agentA.token)).listTools();
+      expect(tools.map((t) => t.name)).not.toContain('list_terms');
     });
 
     it('an admin adds the link, and a wrong token is refused before it is saved', async () => {
