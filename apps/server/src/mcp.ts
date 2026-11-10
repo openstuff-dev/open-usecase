@@ -271,7 +271,8 @@ export function createMcpServer(
       }),
   );
 
-  server.registerTool(
+  // Tools a caller can't use would only cost it tokens, so it doesn't get them.
+  if (actor.canReview) server.registerTool(
     'review_usecase',
     {
       description:
@@ -330,7 +331,7 @@ export function createMcpServer(
       }),
   );
 
-  server.registerTool(
+  if (hasGlossary) server.registerTool(
     'list_terms',
     {
       description:
