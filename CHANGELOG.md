@@ -3,6 +3,27 @@
 Each release is a Docker image at `ghcr.io/openstuff-dev/open-usecase:<version>`.
 Migrations run when the new version starts and only move forward, so back up first.
 
+## 0.3.0
+
+No migrations.
+
+### Web app
+
+- Every Settings tab says what it's for. Empty Projects, Members and Agents offer the first step,
+  the approval modes are explained once, and when something doesn't load, the tab says what.
+- Settings cards pad everything inside them.
+- Moved onto `@openstuff-dev/ui` 0.1.9 and `ui-angular` 0.1.10, which bring the card body and
+  `slowLoading`.
+
+### MCP
+
+- Agents are only offered `review_usecase` when they have reviewer rights, and `list_terms` when the
+  team links OpenPurpose for its glossary. Tools they can't use no longer cost them tokens.
+
+### Evidence
+
+- The use case report includes the Settings browser tests, so their scenarios count as evidence.
+
 ## 0.2.0
 
 Migrations `006_server_integrations` and `007_server_integrations_shape` add the server's
