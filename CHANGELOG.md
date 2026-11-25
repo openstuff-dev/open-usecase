@@ -3,6 +3,12 @@
 Each release is a Docker image at `ghcr.io/openstuff-dev/open-usecase:<version>`.
 Migrations run when the new version starts and only move forward, so back up first.
 
+## 0.3.1
+
+### Web app
+
+- Aligned the app shell with `@openstuff-dev/ui` `0.1.10` and `@openstuff-dev/ui-angular` `0.1.11`.
+
 ## 0.3.0
 
 No migrations.
